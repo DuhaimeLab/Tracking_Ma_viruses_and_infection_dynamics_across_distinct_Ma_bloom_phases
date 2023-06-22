@@ -1,0 +1,401 @@
+---
+title: "Erie Taxa Counts Processing"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+this notebook takes the viral counts from samtools (or any other program) and 
+does the processing to prepare them for use in taxonomic analyses
+
+# Import Libraries
+
+```{r}
+library(tidyr)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(vegan)
+library(gridExtra)
+library(jcolors)
+library(stringr)
+```
+
+# With all Reads
+
+# Import and processing
+## Import 
+
+## import metadata
+```{r}
+metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata_updated_12_15_21.tsv", col_names = T)
+```
+
+```{r}
+metadata$samples <- sub("Sample_", "", metadata$samples)
+
+metadata$samples <- as.character( metadata$samples)
+
+
+```
+
+## Import viral read counts and coverage info
+only counting reads that mapped as part of a pair
+
+
+merged_viral_contigs_count.txt is the output of FeatureCounts (you need the sample, contig, length, and read counts)
+```{r}
+read_coverage <- read_tsv("~/Desktop/erie_story_r_work/merged_viral_contigs_count.txt", col_names = T)
+colnames(read_coverage)[ncol(read_coverage)] <- "ReadCounts"
+read_coverage$ComboId <- sub("FeatureCounts/", "", read_coverage$ComboId)
+read_coverage$ComboId <- sub("_viral_contigs_count.txt", "", read_coverage$ComboId)
+read_coverage <- separate(read_coverage, col="Geneid", into=c("contig", "fragment"), sep="\\|\\|viral_frag_", remove=F)
+read_coverage <- separate(read_coverage, col="ComboId", into=c("Assembly", "sample"), sep="--", remove=F)
+```
+
+```{r}
+head(read_coverage)
+```
+
+# make wide
+```{r}
+read_coverage_wide <- read_coverage %>%
+  pivot_wider(id_cols=c(Geneid, Length), 
+    names_from=Assembly, 
+    values_from=ReadCounts,
+    values_fill=0)
+```
+
+### calculate TPM
+essentially the same as RPKM, but easier to compare between samples of different sequencing depths: 
+https://www.rna-seqblog.com/rpkm-fpkm-and-tpm-clearly-explained/
+
+TPM = transcripts per kilobase million
+TPM = (num reads / (geneLength/1000)) / (total RPK for sample / 1000000) 
+```{r}
+read_counts_norm <- read_coverage_wide[,-c(1,2)]
+read_counts_norm <- read_counts_norm/(read_coverage_wide$Length/1000)
+sample_counts <- tibble(sample=colnames(read_counts_norm),
+                        viral_read_counts=colSums(read_counts_norm))
+read_counts_norm <- t(read_counts_norm)
+read_counts_norm <- read_counts_norm/(sample_counts$viral_read_counts/1000000)
+read_counts_norm <- t(read_counts_norm)
+
+read_counts_norm <- as_tibble(read_counts_norm)
+read_counts_norm$Geneid <- read_coverage_wide$Geneid
+```
+
+```{r}
+read_coverage_metadata <- inner_join(metadata, sample_counts, by = c("samples" = "sample"))
+
+plot_samples_observed <- ggplot(read_coverage_metadata, aes(x=Station, y=viral_read_counts, color=fraction, fill=fraction)) +
+  geom_boxplot() +
+  geom_jitter() +
+  scale_colour_jcolors(palette = "default") +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  ggtitle("Lake Erie Viral Community Observed Richness") +
+  xlab("Samples") +
+  ylab("Observed Richness") +
+  theme(panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=16),
+        plot.title = element_text(size = 20, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+  
+plot_samples_observed
+```
+
+```{r}
+head(read_counts_norm)
+table(is.na(read_counts_norm))
+table(is.numeric(sample_counts$viral_read_counts))
+read_counts_norm[,8]
+```
+
+turn from wide back into long dataframe, remove contigs with zero reads
+```{r}
+tpm_long <- read_counts_norm  %>% 
+  pivot_longer(!Geneid, names_to="samples", values_to="TPM") %>% 
+  filter(TPM!=0) %>% 
+  filter(TPM!="NaN") %>%
+  inner_join(read_coverage, by=c("Geneid", c("samples"="Assembly") ))
+```
+
+
+```{r}
+head(tpm_long)
+```
+
+<this is the output from the parse_clusters script I shared
+```{r}
+clusters <- read_tsv("~/Desktop/erie_story_r_work/merged_3kb_trimmed_viruses_and_ma_virus_references_95-85_clusters_parsed.tsv", col_names=T)
+```
+
+```{r}
+head(clusters)
+```
+
+## collapse clusters
+```{r}
+tpm_collapsed <- tpm_long %>%
+  inner_join(clusters, by=c("contig", "Length"="length")) %>%
+  group_by(cluster, samples) %>%
+  dplyr::summarize(
+    total_mapped_reads=sum(ReadCounts),
+    average_contig_length=mean(Length),
+    total_contig_legnth=sum(Length),
+    total_tpm=sum(TPM)
+  )
+```
+
+```{r}
+head(tpm_collapsed)
+```
+
+## Getting number of contigs per assembly (this is just to have, not necessary for beta diversity)
+```{r}
+contig_counts <- tibble(samples = names(table(tpm_collapsed$samples)),
+                        Cluster_count = table(tpm_collapsed$samples))
+
+contig_counts <- contig_counts %>%
+  inner_join(metadata, by=c("samples")) %>%
+  filter(!duplicated(samples)) %>%
+  group_by(samples) %>%
+  dplyr::summarize(
+    average_contig_count=mean(Cluster_count)
+  )
+
+
+```
+
+```{r}
+contig_counts
+```
+
+# Using a TPM threshold
+```{r}
+table(tpm_collapsed$total_tpm>1)
+```
+
+```{r}
+tpm_collapsed_keep <- tpm_collapsed[tpm_collapsed$total_tpm>1,]
+```
+
+```{r}
+head(tpm_collapsed_keep)
+```
+
+
+### Make wide
+
+```{r}
+tpm_wide <- tpm_collapsed_keep %>% pivot_wider(id_cols=cluster, 
+                                                       names_from=samples, 
+                                                       values_from=total_tpm,
+                                                       values_fill=0)
+```
+
+
+
+```{r}
+write_tsv(as_tibble(tpm_wide), "tpm_wide_contig_clusters.txt")
+```
+
+## format for beta diversity
+```{r}
+abund_table <- t(tpm_wide[,-1])
+colnames(abund_table) <- tpm_wide$cluster
+samples <- rownames(abund_table)
+abund_table <- as_tibble(abund_table)
+abund_table$samples <- samples
+```
+
+```{r}
+metadata_uniq <- metadata[!duplicated(metadata$samples),]
+```
+
+
+## Bind metadata and abund_table
+```{r}
+merged <- left_join(abund_table, metadata_uniq, by = c("samples"))
+```
+
+```{r}
+write_tsv(merged, "~/Desktop/erie_story_r_work/abund_table_tpm_normalized_clusters_with_metadata.tsv")
+```
+
+```{r}
+abund_table[1:30,1:30]
+```
+
+```{r}
+merged_tpm <- read_tsv("~/Desktop/erie_story_r_work/abund_table_tpm_normalized_clusters_with_metadata.tsv")
+
+abund_table <- merged_tpm[,-c((ncol(merged_tpm)-25):ncol(merged_tpm))]
+
+abund_table_rel <-abund_table/rowSums(abund_table)*100
+hist(log10(colSums(abund_table_rel)))
+table(colSums(abund_table_rel)>1)
+
+#write_tsv(abund_table_rel, "~/Desktop/erie_story_r_work/tpm_normalized_vps_relative_abundance.tsv")
+
+
+ 
+```
+
+
+
+
+
+#prep abund table to plot top 10 most abundant viral populations
+
+```{r}
+
+rownames(abund_table_rel) <- colnames(tpm_wide[,-1])
+
+abund_table_rel$sample <- NULL
+
+abund_table_rel <- tibble::rownames_to_column(abund_table_rel, "sample_id")
+
+
+print(abund_table_rel)
+
+
+```
+
+##melt data for plotting
+```{r}
+
+abund_table_rel <- abund_table_rel %>%
+  pivot_longer(!sample_id, names_to = "VP", values_to = "count")
+
+abund_table_rel <- abund_table_rel[!grepl("samples", abund_table_rel$VP), ]
+```
+
+##add metadata
+```{r}
+abund_table_rel_with_metadata <- left_join(abund_table_rel, metadata_uniq, by = c("sample_id" = "samples"))
+
+abund_table_rel_with_metadata$VP <- str_replace_all(abund_table_rel_with_metadata$VP, "Cluster", "VP")
+
+# Define the four target dates to track VPs in
+target_dates <- c("8-Jul-14", "4-Aug-14", "29-Sep-14", "27-Oct-14")
+
+# Subset the data frame based on the dates
+four_dates_abund_table_rel <- abund_table_rel_with_metadata[abund_table_rel_with_metadata$Date %in% target_dates, ]
+
+#classify as abundant or not based on 0.5% rel ab cutoff
+# Create the 'rank' column based on the 'count' values
+four_dates_abund_table_rel$rank <- ifelse(four_dates_abund_table_rel$count >= 0.5, 1, 0)
+
+```
+
+```{r}
+four_dates_abund_table_rel$ordered_dates = factor(four_dates_abund_table_rel$Date, levels=c("8-Jul-14","4-Aug-14","29-Sep-14","27-Oct-14"))
+
+#filter by station here so we are only looking at WLE12
+four_dates_abund_table_rel_wle12 <- subset(four_dates_abund_table_rel, Station == "WLE12")
+
+four_dates_wle12_viral <- subset(four_dates_abund_table_rel_wle12, fraction == "Viral")
+
+four_dates_wle12_whole <- subset(four_dates_abund_table_rel_wle12, fraction == "Whole")
+
+four_dates_wle12_3 <- subset(four_dates_abund_table_rel_wle12, fraction == "3")
+
+four_dates_wle12_53 <- subset(four_dates_abund_table_rel_wle12, fraction == "53")
+
+four_dates_wle12_100 <- subset(four_dates_abund_table_rel_wle12, fraction == "100")
+```
+
+#count number of abundant and non abundant vps at wle12 for each fraction
+```{r}
+table(four_dates_wle12_viral$rank)
+table(four_dates_wle12_whole$rank)
+table(four_dates_wle12_3$rank)
+table(four_dates_wle12_53$rank)
+table(four_dates_wle12_100$rank)
+```
+
+
+```{r}
+four_dates_abund_table_rel_wle12_plot <- ggplot(four_dates_wle12_100, aes(x=ordered_dates, y=rank, group = VP)) +
+  geom_line(position=position_dodge(width=0.05), size=0.8, alpha=0.15, color = "purple") +
+  ggtitle("WLE12 VPs Abundance 100µm Fraction") +
+  xlab("Sampling Date") +
+  ylab("Rank") +
+  theme(axis.text.x = element_text(angle =0, hjust = 0.5)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=18),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+four_dates_abund_table_rel_wle12_plot
+#four_dates_abund_table_rel_wle12_plot + facet_wrap(vars(fraction))
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/wle12_vp_abundance_53_fraction_6_8_23.png", width=1000, height=600)
+four_dates_abund_table_rel_wle12_plot
+dev.off()
+```
+
+
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/wle12_vp_abundance_53_fraction_6_8_23.pdf", width=9, height=6)
+four_dates_abund_table_rel_wle12_plot
+dev.off()
+```
+
+```{r}
+
+four_dates_abund_table_rel_wle12_plot <- ggplot(four_dates_wle12_100, aes(x = ordered_dates, y = rank, group = VP)) +
+  geom_point(position = position_dodge(width = 0.5), size = 0.5, alpha = 0.8, color = "purple") +
+  ggtitle("WLE12 VPs Abundance 100µm Fraction") +
+  xlab("Sampling Date") +
+  ylab("Rank") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5)) +
+  theme(
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black"),
+    panel.border = element_rect(colour = "black", fill = NA, size = 1),
+    axis.title = element_text(size = 18),
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 14),
+    plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+    axis.text.y = element_text(size = 12, colour = "black"),
+    axis.text.x = element_text(size = 12, colour = "black"),
+    plot.margin = margin(t = 1, r = 1, b = 3, l = 2, unit = "cm")
+  )
+
+four_dates_abund_table_rel_wle12_plot
+#four_dates_abund_table_rel_wle12_plot + facet_wrap(vars(fraction))
+
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/wle12_vp_abundance_100_fraction_6_8_23.png", width=1000, height=600)
+four_dates_abund_table_rel_wle12_plot
+dev.off()
+```
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/wle12_vp_abundance_100_fraction_6_8_23.pdf", width=9, height=6)
+four_dates_abund_table_rel_wle12_plot
+dev.off()
+```

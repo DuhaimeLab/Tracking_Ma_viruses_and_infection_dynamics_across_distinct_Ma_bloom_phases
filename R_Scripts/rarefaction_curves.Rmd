@@ -1,0 +1,65 @@
+---
+title: "rarefaction_curves"
+author: "A.J Wing"
+date: "10/26/2021"
+output: html_document
+---
+
+# Import Libraries
+
+```{r}
+library(tidyr)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(vegan)
+library(gridExtra)
+```
+
+## import all counts
+```{r}
+all_counts <- read_tsv("~/Desktop/erie_story_r_work/combined_merged_counts.txt", col_names = F)
+all_counts <-separate(all_counts, col = X2, into=c("count", "contig"), remove = T, sep = " ")
+all_counts <- data.frame( sample=all_counts$X1, count=all_counts$count, contig=all_counts$contig)
+wide_all_counts <- all_counts %>%
+  pivot_wider(
+    names_from = 'sample',
+    values_from = 'count'
+  )
+```
+
+##remove those not counted
+```{r}
+
+final_wide_all_counts <- wide_all_counts[-c(1),]
+```
+
+##replace NAs with 0s
+```{r}
+
+final_wide_all_counts <- mutate_all(final_wide_all_counts, ~replace(., is.na(.), 0))
+```
+
+
+##exclude first column
+```{r}
+
+final_wide_all_counts <- final_wide_all_counts[,-1]
+
+```
+
+##convert all characters to numerics
+```{r}
+final_wide_all_counts<- as.data.frame(apply(final_wide_all_counts, 2, as.numeric))
+sapply(final_wide_all_counts, class) 
+```
+
+```{r}
+final_wide_all_counts <- t(final_wide_all_counts)
+species_counts <- specnumber(final_wide_all_counts) # observed number of species
+raremax <- min(rowSums(final_wide_all_counts))
+Srare <- rarefy(final_wide_all_counts, raremax)
+plot(species_counts, Srare, xlab = "Observed No. of Species", ylab = "Rarefied No. of Species")
+rarecurve(final_wide_all_counts, step = 100000, sample = raremax, col = "blue", cex = 0.7)
+```

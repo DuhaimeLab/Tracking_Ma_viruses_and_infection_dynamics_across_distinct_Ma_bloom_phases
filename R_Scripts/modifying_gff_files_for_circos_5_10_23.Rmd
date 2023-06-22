@@ -1,0 +1,95 @@
+---
+title: "modify_gff_files_for_circos_5_8_23"
+author: "A.J Wing"
+date: "2023-05-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+```
+
+#import and modify gff files
+```{r}
+malem01_data <- read.table("~/Desktop/erie_story_r_work/ma_virus_gff_files/ma-lem01.gff.tsv", header = FALSE, comment.char = "#")
+
+malem01_data$V3 <- gsub("CDS", "malem01-", malem01_data$V3)
+
+malem01_data <- malem01_data[, c("V1", "V3", "V4", "V5")]
+
+malem01_data <- malem01_data %>%
+  mutate(V3 = paste0(V3, row_number()))
+
+malem01_data$V1 <- gsub("49614--k141_251347\\|\\|full", "malem01", malem01_data$V1)
+
+new_col <- rep("band", nrow(malem01_data))
+malem01_data <- cbind(new_col, malem01_data)
+
+```
+
+```{r}
+malmm01_data <- read.table("~/Desktop/erie_story_r_work/ma_virus_gff_files/ma-lmm01.gff.tsv", header = FALSE, comment.char = "#")
+
+malmm01_data$V3 <- gsub("CDS", "malmm01-", malmm01_data$V3)
+
+malmm01_data <- malmm01_data[, c("V1", "V3", "V4", "V5")]
+
+malmm01_data <- malmm01_data %>%
+  mutate(V3 = paste0(V3, row_number()))
+
+malmm01_data$V1 <- gsub("AB231700.1_Microcystis_virus_Ma-LMM01_DNA_complete_genome", "malmm01", malmm01_data$V1)
+
+new_col <- rep("band", nrow(malmm01_data))
+malmm01_data <- cbind(new_col, malmm01_data)
+
+```
+
+```{r}
+mamvdc_data <- read.table("~/Desktop/erie_story_r_work/ma_virus_gff_files/mamv-dc.gff.tsv", header = FALSE, comment.char = "#")
+
+mamvdc_data$V3 <- gsub("CDS", "mamvdc-", mamvdc_data$V3)
+
+mamvdc_data <- mamvdc_data[, c("V1", "V3", "V4", "V5")]
+
+mamvdc_data <- mamvdc_data %>%
+  mutate(V3 = paste0(V3, row_number()))
+
+mamvdc_data$V1 <- gsub("KF356199.1_Microcystis_phage_MaMV-DC_complete_genome", "mamvdc", mamvdc_data$V1)
+
+new_col <- rep("band", nrow(mamvdc_data))
+mamvdc_data <- cbind(new_col, mamvdc_data)
+
+```
+
+```{r}
+mvgfj19_data <- read.table("~/Desktop/erie_story_r_work/ma_virus_gff_files/microcystis_virus_joined_contig_19.gff.tsv", header = FALSE, comment.char = "#")
+
+mvgfj19_data$V3 <- gsub("CDS", "mvgfj19-", mvgfj19_data$V3)
+
+mvgfj19_data <- mvgfj19_data[, c("V1", "V3", "V4", "V5")]
+
+mvgfj19_data <- mvgfj19_data %>%
+  mutate(V3 = paste0(V3, row_number()))
+
+mvgfj19_data$V1 <- gsub("MT840185.1_MAG_Bacteriophage_sp._clone_Joined_contig_19_sequence", "mvgfj19", mvgfj19_data$V1)
+
+new_col <- rep("band", nrow(mvgfj19_data))
+mvgfj19_data <- cbind(new_col, mvgfj19_data)
+
+```
+
+#combine and export modified gff files 
+```{r}
+# assume the 4 data frames are named df1, df2, df3, and df4
+
+ma_virus_bands <- rbind(malem01_data, malmm01_data, mamvdc_data, mvgfj19_data)
+
+
+write.table(ma_virus_bands, file = "~/Desktop/erie_story_r_work/ma_virus_gff_files/ma_virus_bands.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
+

@@ -1,0 +1,161 @@
+---
+title: "shared_phages_host_only_work_3_1_23"
+author: "A.J Wing"
+date: "2023-03-01"
+output: html_document
+---
+
+```{r}
+library("tidyr")
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(ggthemes)
+library(reshape2)
+library(pheatmap)
+```
+
+# read the CSV file into a data frame
+```{r}
+og_aug_df <- read.csv("~/Desktop/erie_story_r_work/aug_4_shared_phages.csv")
+```
+
+# read the CSV file into a data frame
+```{r}
+og_sep_df <- read.csv("~/Desktop/erie_story_r_work/sep_29_shared_phages.csv")
+```
+
+
+#rename dfs for analysis
+```{r}
+aug_df <- og_aug_df
+
+sep_df <- og_sep_df
+```
+
+# rename hosts to be more informational
+```{r}
+aug_df$source <- gsub("contigs", "Ma", aug_df$source)
+aug_df$source <- gsub("Sample_49614_50.1", "49614_Limnohabitans", aug_df$source)
+aug_df$source <- gsub("Sample_49615_22", "49615_Chitinophagales", aug_df$source)
+aug_df$source <- gsub("Sample_49618_18", "49618_Schleiferiaceae", aug_df$source)
+aug_df$source <- gsub("Sample_49618_39.1", "49618_Gemmatimonadaceae", aug_df$source)
+aug_df$source <- gsub("Sample_49618_42", "49618_Planctomycetaceae", aug_df$source)
+aug_df$source <- gsub("Sample_49618_51", "49618_Luteolibacter", aug_df$source)
+aug_df$source <- gsub("Sample_49618_60", "49618_Bacteroidia", aug_df$source)
+aug_df$source <- gsub("Sample_49618_9", "49618_Limnohabitans", aug_df$source)
+aug_df$target <- gsub("contigs", "Ma", aug_df$target)
+aug_df$target <- gsub("Sample_49614_50.1", "49614_Limnohabitans", aug_df$target)
+aug_df$target <- gsub("Sample_49615_22", "49615_Chitinophagales", aug_df$target)
+aug_df$target <- gsub("Sample_49618_18", "49618_Schleiferiaceae", aug_df$target)
+aug_df$target <- gsub("Sample_49618_39.1", "49618_Gemmatimonadaceae", aug_df$target)
+aug_df$target <- gsub("Sample_49618_42", "49618_Planctomycetaceae", aug_df$target)
+aug_df$target <- gsub("Sample_49618_51", "49618_Luteolibacter", aug_df$target)
+aug_df$target <- gsub("Sample_49618_60", "49618_Bacteroidia", aug_df$target)
+aug_df$target <- gsub("Sample_49618_9", "49618_Limnohabitans", aug_df$target)
+```
+
+```{r}
+sep_df$source <- gsub("contigs", "Ma", sep_df$source)
+sep_df$source <- gsub("Sample_49624_12", "49624_Sphingorhabdus_B", sep_df$source)
+sep_df$source <- gsub("Sample_49624_23", "49624_Kapabacteriales", sep_df$source)
+sep_df$source <- gsub("Sample_49624_34", "49624_Bacteroidia", sep_df$source)
+sep_df$source <- gsub("Sample_49624_46", "49624_Limnobacter", sep_df$source)
+sep_df$source <- gsub("Sample_49624_47", "49624_Ilumatobacteraceae", sep_df$source)
+sep_df$source <- gsub("Sample_49624_51.1", "49624_Pirellula", sep_df$source)
+sep_df$source <- gsub("Sample_49624_8", "49624_Rhodobacter_F", sep_df$source)
+sep_df$source <- gsub("Sample_49625_12", "49625_Chryseotalea", sep_df$source)
+sep_df$source <- gsub("Sample_49625_6", "49625_Rhodobacter_F", sep_df$source)
+sep_df$source <- gsub("Sample_49628_11", "49628_Sphingorhabdus_B", sep_df$source)
+sep_df$source <- gsub("Sample_49628_20", "49628_Bacteroidia", sep_df$source)
+sep_df$source <- gsub("Sample_49628_55", "49628_Dolichospermum circinale", sep_df$source)
+sep_df$source <- gsub("Sample_49628_63", "49628_Burkholderiales", sep_df$source)
+sep_df$source <- gsub("Sample_49632_12", "49632_Chitinophagaceae", sep_df$source)
+sep_df$source <- gsub("Sample_49632_27", "49632_Crocinitomicaceae", sep_df$source)
+sep_df$source <- gsub("Sample_49632_5.1", "49632_Burkholderiaceae", sep_df$source)
+sep_df$target <- gsub("contigs", "Ma", sep_df$target)
+sep_df$target <- gsub("Sample_49624_12", "49624_Sphingorhabdus_B", sep_df$target)
+sep_df$target <- gsub("Sample_49624_23", "49624_Kapabacteriales", sep_df$target)
+sep_df$target <- gsub("Sample_49624_34", "49624_Bacteroidia", sep_df$target)
+sep_df$target <- gsub("Sample_49624_46", "49624_Limnobacter", sep_df$target)
+sep_df$target <- gsub("Sample_49624_47", "49624_Ilumatobacteraceae", sep_df$target)
+sep_df$target <- gsub("Sample_49624_51.1", "49624_Pirellula", sep_df$target)
+sep_df$target <- gsub("Sample_49624_8", "49624_Rhodobacter_F", sep_df$target)
+sep_df$target <- gsub("Sample_49625_12", "49625_Chryseotalea", sep_df$target)
+sep_df$target <- gsub("Sample_49625_6", "49625_Rhodobacter_F", sep_df$target)
+sep_df$target <- gsub("Sample_49628_11", "49628_Sphingorhabdus_B", sep_df$target)
+sep_df$target <- gsub("Sample_49628_20", "49628_Bacteroidia", sep_df$target)
+sep_df$target <- gsub("Sample_49628_55", "49628_Dolichospermum circinale", sep_df$target)
+sep_df$target <- gsub("Sample_49628_63", "49628_Burkholderiales", sep_df$target)
+sep_df$target <- gsub("Sample_49632_12", "49632_Chitinophagaceae", sep_df$target)
+sep_df$target <- gsub("Sample_49632_27", "49632_Crocinitomicaceae", sep_df$target)
+sep_df$target <- gsub("Sample_49632_5.1", "49632_Burkholderiaceae", sep_df$target)
+
+```
+
+
+```{r}
+ggplot(og_aug_df, aes(x = source, y = target, fill = shared_phages)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "blue", breaks=seq(0,250, by=50)) +
+  labs(fill = "Shared Phages") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                      axis.title.x = element_blank(),
+                      axis.title.y = element_blank())
+```
+
+```{r}
+ggplot(aug_df, aes(x = source, y = target, fill = shared_phages)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "blue", breaks=seq(0,250, by=50)) +
+  labs(fill = "Shared Phages") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                      axis.title.x = element_blank(),
+                      axis.title.y = element_blank())
+```
+
+#subset columns to check out some statistics
+```{r}
+aug_ma_contigs <- subset(og_aug_df, grepl("contigs", og_aug_df$source))
+aug_non_ma_contigs <- subset(og_aug_df,grepl("Sample", og_aug_df$source))
+```
+
+
+```{r}
+mean(aug_ma_contigs$shared_phages)
+mean(aug_non_ma_contigs$shared_phages)
+```
+
+```{r}
+sd(aug_ma_contigs$shared_phages)/sqrt(length(aug_ma_contigs$shared_phages))
+sd(aug_non_ma_contigs$shared_phages)/sqrt(length(aug_non_ma_contigs$shared_phages))
+```
+
+
+```{r}
+ggplot(og_sep_df, aes(x = source, y = target, fill = shared_phages)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "blue", breaks=seq(0,250, by=50)) +
+  labs(fill = "Shared Phages") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                      axis.title.x = element_blank(),
+                      axis.title.y = element_blank())
+```
+
+#subset columns to check out some statistics
+```{r}
+sep_ma_contigs <- subset(og_sep_df, grepl("contigs", og_sep_df$source))
+sep_non_ma_contigs <- subset(og_sep_df, grepl("Sample", og_sep_df$source))
+```
+
+
+```{r}
+mean(sep_ma_contigs$shared_phages)
+mean(sep_non_ma_contigs$shared_phages)
+```
+
+```{r}
+sd(sep_ma_contigs$shared_phages)/sqrt(length(sep_ma_contigs$shared_phages))
+sd(sep_non_ma_contigs$shared_phages)/sqrt(length(sep_non_ma_contigs$shared_phages))
+```

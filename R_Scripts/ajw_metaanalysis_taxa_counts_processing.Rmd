@@ -1,0 +1,500 @@
+---
+title: "Drinking Water Meta-Analysis Taxa Counts Processing"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+this notebook takes the viral counts from samtools (or any other program) and 
+does the processing to prepare them for use in taxonomic analyses
+
+# Import Libraries
+
+```{r}
+library(tidyr)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(vegan)
+library(gridExtra)
+```
+
+# With all Reads
+
+# Import and processing
+## Import 
+
+## import metadata
+```{r}
+metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata.tsv", col_names = T)
+```
+
+## Import viral read counts and coverage info
+only counting reads that mapped as part of a pair
+
+
+import coverage stats from samtools coverage
+need to remove any lines with NAs (from the lines with the header for each file)
+```{r}
+read_coverage <- read_tsv("../IntermediaryDataForScripts/Reads_align_on_95-85_virus_paired_mapped_sorted_coverage_merged.tsv", col_names = T)
+colnames(read_coverage)[1] <- "sample"
+colnames(read_coverage)[2] <- "contig"
+read_coverage <- read_coverage[!is.na(read_coverage$coverage),]
+```
+
+```{r}
+viruses_high_list <- read.table("../IntermediaryDataForScripts/viral_contigs_list_method_identified_by_virfinder_virsorter_vibrant_checkv_virsorter2_20211025.txt", header=T)
+```
+
+## collapse replicates
+```{r}
+read_coverage <- read_coverage %>%
+  filter(numreads>0) %>%
+  inner_join(metadata2, by=c("sample"="samples")) %>%
+  group_by(contig, true_samples, Assembly) %>%
+  dplyr::summarize(
+    total_read_count=sum(total_reads),
+    total_mapped_reads=sum(numreads),
+    average_bases_covered=mean(covbases),
+    average_percent_coverage=mean(coverage),
+    average_mean_depth=mean(meandepth)
+  )
+```
+
+## Getting number of contigs per assembly
+```{r}
+contig_counts <- tibble(Assembly = names(table(read_coverage$Assembly)),
+                        Contig_Count = table(read_coverage$Assembly))
+
+contig_counts <- contig_counts %>%
+  inner_join(metadata2, by=c("Assembly")) %>%
+  filter(!duplicated(Assembly)) %>%
+  group_by(Citation) %>%
+  dplyr::summarize(
+    average_contig_count=mean(Contig_Count)
+  )
+
+
+```
+
+
+
+## Remove low abundance contigs
+
+Uncovering Earth's virome used a threshold of 10% coverage over a viral contig for discovery purposes and using similar data
+
+Marine DNA Viral Macro- and Microdiversity from Pole to Pole: For downstream macrodiversity calculations, contigs R 5kb in length that had < 5kb coverage or less than the total length of the contig covered for contigs < 5kb were removed.
+
+only keep those contigs with reads covering on average at least 3000bp of its length (after collapsing replicates)
+
+which loses about 3.7% of the potentially viral reads
+```{r}
+sum(read_coverage$total_mapped_reads[read_coverage$average_bases_covered>=3000])/sum(read_coverage$total_mapped_reads)
+```
+
+```{r}
+read_coverage_keep <- read_coverage[read_coverage$average_bases_covered>=3000,]
+```
+
+### Make wide
+
+```{r}
+read_counts_wide <- read_coverage_keep %>% pivot_wider(id_cols=contig, 
+                                                       names_from=true_samples, 
+                                                       values_from=total_mapped_reads,
+                                                       values_fill=0)
+```
+
+
+
+```{r}
+write_tsv(as_tibble(read_counts_wide), "../IntermediaryDataForScripts/merged_trimmed_viruses_paired_reads_greater_3000bp_covered_wide.txt")
+```
+
+##############################
+
+# Normalizing - RPKM
+
+```{r}
+contig_lengths <- read_tsv("../IntermediaryDataForScripts/merged_trimmed_viruses_only_95-85_greater_3000_contig_lengths.txt",
+                           col_names=F)
+
+colnames(contig_lengths) <- c("contig", "contig_length_bp")
+```
+
+### merge with table
+```{r}
+read_counts_wide <- inner_join(read_counts_wide, contig_lengths, by="contig")
+```
+
+### Column Sums
+```{r}
+sample_counts <- colSums(read_counts_wide[,-c(1,ncol(read_counts_wide))])
+columns <- names(sample_counts)
+sample_counts <- as_tibble(sample_counts)
+colnames(sample_counts) <- "viral_read_counts"
+sample_counts$samples <- columns
+```
+
+### calculate RPKM
+RPKM = reads per kilo base pairs per million mapped reads
+RPKM = numReads / ((geneLength/1000) * (totalNumReads/1000000))
+```{r}
+read_counts_norm <- read_counts_wide[,-c(1,ncol(read_counts_wide))]
+read_counts_norm <- read_counts_norm/(read_counts_wide$contig_length_bp/1000)
+read_counts_norm <- t(read_counts_norm)
+read_counts_norm <- read_counts_norm/(sample_counts$viral_read_counts/1000000)
+read_counts_norm <- t(read_counts_norm)
+```
+
+format for beta diversity
+```{r}
+abund_table <- t(read_counts_norm)
+colnames(abund_table) <- read_counts_wide$contig
+true_samples <- rownames(abund_table)
+abund_table <- as_tibble(abund_table)
+abund_table$true_samples <- true_samples
+```
+
+```{r}
+metadata_uniq <- metadata2[!duplicated(metadata2$true_samples),]
+```
+
+
+## Bind metadata and abund_table
+```{r}
+merged <- left_join(abund_table, metadata_uniq, by = c("true_samples"))
+```
+
+```{r}
+write_tsv(merged, "../IntermediaryDataForScripts/abund_table_rpkm_normalized_trimmed_contigs_replicates_collapsed_all_replicates_with_metadata.tsv")
+```
+
+## Bind metadata and abund_table
+```{r}
+read_counts_wide_t <- t(read_counts_wide[,-c(1,ncol(read_counts_wide))])
+colnames(read_counts_wide_t) <- read_counts_wide$contig
+true_samples <- rownames(read_counts_wide_t)
+read_counts_wide_t <- as_tibble(read_counts_wide_t)
+read_counts_wide_t$true_samples <- true_samples
+
+merged <- left_join(read_counts_wide_t, metadata_uniq, by = c("true_samples"))
+```
+
+```{r}
+write_tsv(merged, "../IntermediaryDataForScripts/abund_table_trimmed_contigs_replicates_collapsed_all_replicates_with_metadata.tsv")
+```
+
+
+#####################################
+
+### Viral Mapping Read Counts
+```{r}
+read_counts <- read_tsv("~/Desktop/erie_story_r_work/merged_trimmed_viruses_downsampled_1000000.txt", col_names = F)
+```
+
+## Process
+
+### Split second column
+```{r}
+read_counts <- separate(read_counts, col=X2, c("read_counts", "contig"), sep = " ", remove = T)
+read_counts$read_counts <- as.numeric(read_counts$read_counts)
+colnames(read_counts)[1] <- "sample"
+```
+
+### Make wide
+
+
+```{r}
+read_counts_wide <- read_counts %>% spread(sample, read_counts)
+read_counts_wide[is.na(read_counts_wide)] <- 0
+```
+
+### Sort based on read count coverage
+```{r}
+read_counts_wide$rowSums <- rowSums(read_counts_wide[,-1])
+```
+
+```{r}
+read_counts_wide <- read_counts_wide[order(read_counts_wide$rowSums, decreasing = T),]
+read_counts_wide <- read_counts_wide[read_counts_wide$rowSums>=10,]
+```
+
+```{r}
+write_tsv(as_tibble(read_counts_wide), "merged_trimmed_viruses_downsampled_1000000_wide.txt")
+```
+# With Downsampled Reads
+
+# Import and processing
+## Import 
+
+### Import Viral Mapping Read Counts
+This is a matrix where the columns are samples and the rows are contigs.
+The number of reads per sample should be approximately 10,000 reads because
+this data was "down-sampled" or "rarefied" to select a random subset of the reads
+if there were more than 10,000 reads. This helps with making comparisons among samples.
+In this context, the contigs are each a "viral population".
+The last column (number of reads per contig) is removed.
+Remove all contigs from the Puerto Rico study
+```{r}
+read_counts_wide <- read_tsv("~/Desktop/erie_story_r_work/merged_trimmed_viruses_downsampled_1000000_wide.txt", col_names = T)
+downsampled_counts <- read_counts_wide[,-ncol(read_counts_wide)]
+#downsampled_counts <- downsampled_counts[!grepl("co-", downsampled_counts$contig),]
+```
+
+## Processing 
+
+### Transpose the matrix to have samples as rows
+
+```{r}
+abund_table<-t(downsampled_counts[,-1])
+```
+
+Turn the abund_table matrix into a tibble.
+```{r}
+rn <- rownames(abund_table)
+abund_table <- as_tibble(abund_table)
+abund_table$samples <- rn
+```
+
+## import metadata
+(replace with updated metadata file once you have the latitudes added)
+```{r}
+metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata.tsv")
+```
+
+```{r}
+
+metadata$samples <- as.character( metadata$samples)
+```
+
+## Bind metadata and abund_table
+Some processing as well, including, delete and rows that have a "NA" for sample
+and change the type of the column merged$total_reads to be numeric.
+```{r}
+merged <- left_join(abund_table, metadata, by = c("samples"))
+merged$samples[is.na(merged$samples)] <- 1
+
+merged$total_reads <- as.numeric(merged$total_reads)
+```
+
+## collapse replicates from Dot's study
+"%>%" allows you to "pipe" different functions. For instance this, loads the "merged" 
+dataframe, then processes it to collapse sequencing replicates. 
+In the Dai et al (2020) study, the authors took multiple sequencing replicates
+for every sample that they took. For the analyses we'll be doing, we want to 
+collapse these techincal replicates into one sample. We could have also done this
+before mapping the reads to the contigs.
+```{r}
+abund_table <- merged %>%
+  group_by(true_samples, Assembly, residual_type_binary,  Disinfectant_Residual, 
+           `Koppen Zone`, Sample.Collection.Method.Simplified,
+           Extraction.Method.Simplified, Citation, Country, Continent) %>%
+  summarize(
+    across(1:(ncol(merged)-ncol(metadata2)), mean)
+  )
+```
+
+```{r}
+head(abund_table[1:10, 1:20])
+```
+
+### Remove viral populations that don't have at least 10 reads
+Also, transpose the matrix, so that now the viral populations are the columns
+and the samples are rows
+This will be important for joining together this read coverage information with
+the sample metadata.
+
+```{r}
+abund_table_reads <- abund_table[,-c(1:10)]
+#abund_table_reads <- abund_table_reads[,colSums(abund_table_reads)>11]
+#last row is all NAs
+#abund_table_reads <- abund_table_reads[-nrow(abund_table_reads),]
+#abund_table <- abund_table[-nrow(abund_table),]
+```
+
+# Richness and Evenness
+
+### Calculate alpha diversity
+Calculate the Shannon and Simpson diversities (take into account evenness, as
+well as the number of taxa), as well as the number of taxa (viral populations).
+```{r}
+alpha_wide <- abund_table[,1:10]
+alpha_wide$shannon <- vegan::diversity(abund_table_reads, index = "shannon", MARGIN = 1)
+alpha_wide$simpson <- vegan::diversity(abund_table_reads, MARGIN = 1, index = "simpson")
+alpha_wide$observed <- vegan::specnumber(abund_table_reads, MARGIN = 1)
+```
+
+```{r}
+mean(alpha_wide$shannon)
+sd(alpha_wide$shannon)
+
+mean(alpha_wide$observed)
+sd(alpha_wide$observed)
+```
+
+### visualizing the alpha diversity differences by sample
+```{r}
+alpha_wide$res <- "Suspected"
+#alpha_wide$res[alpha_wide$residual_type_binary=="No Residual Disinfectant"] <- "No"
+#alpha_wide$res[alpha_wide$residual_type_binary=="Residual Disinfectant"] <- "Yes"
+
+alpha_wide$res[alpha_wide$Disinfectant_Residual=="Chlorine"] <- "Yes - Chlorine"
+alpha_wide$res[alpha_wide$Disinfectant_Residual=="Chloramine"] <- "Yes - Chloramine"
+alpha_wide$res[alpha_wide$Disinfectant_Residual=="No Residual"] <- "No"
+
+p3 <- ggplot(alpha_wide, aes(x=res, y=observed, 
+                   color=res, fill=res)) +
+  geom_jitter(width=0.1, size=2, alpha=0.4) +
+  geom_boxplot() +
+  theme(panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=16), 
+        axis.text.y = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=14, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"),
+        legend.position = "none") +
+  scale_colour_manual(name = 'residual_type_binary',
+                     values = alpha(c(viridis(5)[1],
+                                      viridis(5)[2],
+                                      viridis(5)[4],
+                                      viridis(5)[3]), 1),
+                     labels = c("No", "Yes", "Suspected")) +
+  scale_fill_manual(name = 'residual_type_binary',
+                     values = alpha(c(viridis(5)[1],
+                                      viridis(5)[2],
+                                      viridis(5)[4],
+                                      viridis(5)[3]), 0.2),
+                    labels = c("No", "Yes", "Suspected")) +
+  xlab("Residual Disinfectant") +
+  ylab("Number of Taxa") + ylim(c(0,3000))
+
+p3
+```
+
+```{r}
+png("../IntermediaryDataForScripts/richness_all.png", width=600, height=300)
+p3
+dev.off()
+```
+
+```{r}
+model <- lm( alpha_wide$observed ~ alpha_wide$res )
+ANOVA <- aov(model)
+ 
+# Tukey test to study each pair of treatment :
+TUKEY <- TukeyHSD(x=ANOVA, 'alpha_wide$res', conf.level=0.95)
+
+TUKEY
+```
+
+
+```{r}
+p3 <- ggplot(alpha_wide, aes(x=residual_type_binary, y=observed, 
+                   color=Citation, fill=Citation)) +
+  geom_jitter(width=0.1, size=2, alpha=0.4) +
+  geom_boxplot() +
+  theme(panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=15), 
+        axis.text.y = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(angle=30, vjust=1, hjust=1, size=8, face="italic", colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"),
+        legend.position = "none") +
+  scale_colour_manual(name = 'Citation',
+                     values = alpha(c(viridis(length(unique(alpha_wide$Citation)))), 1)) +
+  scale_fill_manual(name = 'Citation',
+                     values = alpha(c(viridis(length(unique(alpha_wide$Citation)))), 0.2)) +
+  xlab("Residual Disinfectant") +
+  ylab("Number of Taxa")
+
+p3
+```
+
+
+
+```{r}
+alpha_wide_res <- alpha_wide[alpha_wide$Citation=="Dai et al (2020)",]
+```
+
+```{r}
+wt_shannon <- wilcox.test(alpha_wide_res$shannon[alpha_wide_res$residual_type_binary=="Residual Disinfectant"],
+       alpha_wide_res$shannon[alpha_wide_res$residual_type_binary=="No Residual Disinfectant"])
+wt_shannon
+
+wt_richness <- wilcox.test(alpha_wide_res$observed[alpha_wide_res$residual_type_binary=="Residual Disinfectant"],
+       alpha_wide_res$observed[alpha_wide_res$residual_type_binary=="No Residual Disinfectant"])
+wt_richness
+```
+
+```{r}
+p3 <- ggplot(alpha_wide_res, aes(x=residual_type_binary, y=observed, 
+                   color=residual_type_binary, fill=residual_type_binary)) +
+  geom_jitter(width=0.1, size=2, alpha=0.4) +
+  geom_boxplot() +
+  geom_text(aes(y=0, x=1), color="black", label=paste("p-value=", round(wt_shannon$p.value, 4), sep=""), 
+            size=5.5, nudge_y = 0, nudge_x = 0.3,
+            check_overlap = T) +
+  theme(panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=24), 
+        axis.text.y = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(angle=30, vjust=1, hjust=1, size=14, face="italic", colour="black"),
+        text = element_text(size = 14),
+        plot.margin = unit(c(1, 1, 1, 2.2),"lines"),
+        legend.position = "none") +
+  scale_shape_manual(name="Distribution System:",
+                     values=c(21,22,23)) +
+  scale_color_manual(name="Distribution System:",
+                     values = alpha(c(viridis(5)[1],
+                                      viridis(5)[3]), 1)) + 
+  scale_fill_manual(name="Distribution System:",
+                     values = alpha(c(viridis(5)[1],
+                                      viridis(5)[3]), 0.3)) +
+  xlab("") +
+  ylab("Richness") + ylim(c(0,3000))
+
+p3
+
+p1 <- ggplot(alpha_wide_res, aes(x=residual_type_binary, y=shannon, 
+                   color=residual_type_binary, fill=residual_type_binary)) +
+  geom_jitter(width=0.1, size=2, alpha=0.4) +
+  geom_boxplot() +
+  geom_text(aes(y=0, x=1), color="black", label=paste("p-value=", round(wt_shannon$p.value, 4), sep=""), 
+            size=5.5, nudge_y = 0, nudge_x = 0.2,
+            check_overlap = T) +
+  theme(panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=24), 
+        axis.text.y = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(angle=30, vjust=1, hjust=1, size=14, face="italic", colour="black"),
+        text = element_text(size = 14),
+        plot.margin = unit(c(1, 1, 1, 2.2),"lines"),
+        legend.position = "none") +
+  scale_shape_manual(name="",
+                     values=c(21,22,23)) +
+  scale_color_manual(name="",
+                     values = alpha(c(viridis(5)[1],
+                                      viridis(5)[3]), 1)) + 
+  scale_fill_manual(name="",
+                     values = alpha(c(viridis(5)[1],
+                                      viridis(5)[3]), 0.3)) + 
+  xlab("") +
+  ylab("Shannon Diversity") + ylim(c(0,7))
+
+p1
+```
+
+```{r}
+png("../IntermediaryDataForScripts/fig_5.png", width=500, height=500)
+gridExtra::grid.arrange(p3,p1,nrow=1)
+dev.off()
+```
+
+
+

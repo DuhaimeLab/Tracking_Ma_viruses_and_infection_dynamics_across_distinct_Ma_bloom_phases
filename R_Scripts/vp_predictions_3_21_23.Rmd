@@ -1,0 +1,79 @@
+---
+title: "vps_predictions_3_21_23"
+author: "A.J Wing"
+date: "2023-03-21"
+output: html_document
+---
+
+# Import Libraries
+
+```{r}
+library(tidyr)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(vegan)
+library(gridExtra)
+library(jcolors)
+```
+
+
+#august bloom predictions without viral binning
+```{r}
+# load data
+HABs2014 <- read_tsv("~/Desktop/erie_story_r_work/Aug4_predictions.tsv")
+HABs2014_temp <- separate(HABs2014, col=pairs, c("phage", "host"), sep=":concatenated_", remove = FALSE)
+HABs2014_aug_bloom <- HABs2014_temp[, c("phage", "host", "Homology", "Predictions", "GCdiff", "k3dist", "k6dist", "InfProbabilities")]
+HABs2014_aug_bloom$phage <- gsub(".fasta", "", HABs2014_aug_bloom$phage) 
+HABs2014_aug_bloom <-HABs2014_aug_bloom[!(HABs2014_aug_bloom$host=="Sample_49613_42.fasta"),]
+HABs2014_aug_bloom <-HABs2014_aug_bloom[!(HABs2014_aug_bloom$host=="Sample_49613_9.fasta"),]
+```
+
+#september bloom
+```{r}
+# load data
+HABs2014 <- read_tsv("~/Desktop/erie_story_r_work/Sep29_predictions.tsv")
+HABs2014_temp <- separate(HABs2014, col=pairs, c("phage", "host"), sep=":concatenated_", remove = FALSE)
+HABs2014_sep_bloom <- HABs2014_temp[, c("phage", "host", "Homology", "Predictions", "GCdiff", "k3dist", "k6dist", "InfProbabilities")]
+HABs2014_sep_bloom$phage <- gsub(".fasta", "", HABs2014_sep_bloom$phage) 
+#HABs2014_sep_bloom$phage <- gsub("concatenated_", "", HABs2014$phage)
+head(HABs2014_sep_bloom)
+```
+
+
+##now bind aug4 and sep29 ma virus tpm norm'd counts
+```{r}
+both_peaks_predictions <- rbind(HABs2014_aug_bloom,HABs2014_sep_bloom)
+dim(both_peaks_predictions)
+```
+
+
+```{r}
+clusters <- read_tsv("~/Desktop/erie_story_r_work/merged_3kb_trimmed_viruses_and_ma_virus_references_95-85_clusters_parsed.tsv", col_names=T)
+```
+
+
+```{r}
+names(clusters)[names(clusters) == 'contig'] <- "phage"
+
+vp_predictions <- left_join(both_peaks_predictions,clusters,by="phage")
+dim(vp_predictions)
+```
+
+
+
+```{r}
+vp_predictions_10kb <- vp_predictions[vp_predictions$length>=10000,]
+```
+
+```{r}
+thresh <- 0.93
+
+vp_predictions_10kb_93_cutoff <- vp_predictions_10kb[which(vp_predictions_10kb$InfProbabilities > thresh), ]
+print(dim(vp_predictions_10kb_93_cutoff))
+```
+
+```{r}
+vp_dates <- read_tsv("~/Desktop/erie_story_r_work/VP_number_of_sample_dates.tsv", col_names=T)
+```

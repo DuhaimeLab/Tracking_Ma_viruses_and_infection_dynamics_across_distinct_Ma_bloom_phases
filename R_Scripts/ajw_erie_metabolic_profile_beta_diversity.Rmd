@@ -1,0 +1,435 @@
+---
+title: "ajw_erie_metabolic_profile_beta_diversity"
+author: "A.J Wing"
+date: '2022-04-15'
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load necessary packages
+```{r}
+library(tidyr)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(dendextend)
+library(gridExtra)
+library(vegan)
+library(ape)
+library(RColorBrewer)
+library(jcolors)
+library(showtext)
+```
+
+
+# Imports
+
+```{r}
+metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata_updated_12_15_21.tsv", col_names = T)
+```
+
+
+
+## import read coverage data
+###fix line 53--rename this column as 'Sample'--everything should be merged by sample in lieu of Assembly
+```{r}
+coverage <- read_tsv("~/Desktop/erie_story_r_work/merged_viral_ORF_count.txt", col_names = T)
+colnames(coverage)[ncol(coverage)] <- "Counts"
+coverage$ComboId <- gsub("FeatureCountsORFs/", "", coverage$ComboId)
+coverage$ComboId <- gsub("_viral_ORF_count.txt", "", coverage$ComboId)
+names(coverage)[1] <- 'Sample'
+coverage$Chr <- gsub("\\.", "_", coverage$Chr)
+```
+
+```{r}
+head(coverage)
+```
+
+
+## import DRAM annotations
+
+```{r}
+annotations <- read_tsv("~/Desktop/erie_story_r_work/merged_annotations.tsv", col_names = T)
+colnames(annotations)[2] <- "Geneid"
+colnames(annotations)[4] <- "UniqContig"
+colnames(annotations)[5] <- "Start"
+colnames(annotations)[7] <- "End"
+annotations <- annotations[,-1]
+annotations <- separate(annotations, col="UniqContig", into=c("Sample", "Contig"), sep = "--", remove = F)
+
+```
+
+```{r}
+head(annotations)
+```
+
+## Get Counts by KEGG
+
+```{r}
+annotation_coverage <- right_join(annotations, coverage, 
+                                 by=c("Geneid", "Sample"))
+```
+
+## Only keep pfams
+```{r}
+annotation_coverage_pfam <- annotation_coverage[annotation_coverage$rank!="E",]
+```
+
+```{r}
+annotation_coverage_pfam <- annotation_coverage_pfam %>% 
+    separate(pfam_hits, into="pfam_hits", sep=";")
+```
+
+```{r}
+head(annotation_coverage_pfam)
+```
+
+### Make wide
+
+```{r}
+annotation_pfam <- annotation_coverage_pfam %>%
+    group_by(pfam_hits,Sample) %>%
+    dplyr::summarize(
+      across(starts_with("Counts"), sum)
+    ) 
+```
+
+```{r}
+annotation_pfam_wide <- annotation_pfam %>%
+  pivot_wider(names_from=Sample, values_from=Counts, values_fill=0)
+```
+
+
+
+```{r}
+write_tsv(as_tibble(annotation_pfam_wide), "annotation_pfam_wide_counts.txt")
+```
+
+
+### calculate TPM
+essentially the same as RPKM, but easier to compare between samples of different sequencing depths: 
+https://www.rna-seqblog.com/rpkm-fpkm-and-tpm-clearly-explained/
+
+TPM = transcripts per kilobase million
+TPM = (num reads / (geneLength/1000)) / (total RPK for sample / 1000000) 
+```{r}
+pfam_counts_norm <- annotation_pfam_wide[,-c(1,2)]
+pfam_counts_norm <- pfam_counts_norm/(annotation_pfam_wide$Length/1000)
+sample_counts <- tibble(sample=colnames(pfam_counts_norm),
+                        viral_pfam_counts=colSums(pfam_counts_norm))
+pfam_counts_norm <- t(pfam_counts_norm)
+pfam_counts_norm <- pfam_counts_norm/(sample_counts$viral_pfam_counts/1000000)
+pfam_counts_norm <- t(pfam_counts_norm)
+
+pfam_counts_norm <- as_tibble(pfam_counts_norm)
+pfam_counts_norm$Geneid <- annotation_pfam_wide$Geneid
+```
+
+turn from wide back into long dataframe, remove contigs with zero reads
+```{r}
+pfam_counts_long <- pfam_counts_norm  %>% 
+  pivot_longer(!Geneid, names_to="samples", values_to="normalized_pfam_counts") %>% 
+  filter(normalized_pfam_counts!=0) %>% 
+  filter(normalized_pfam_counts!="NaN") %>%
+  inner_join(annotation_coverage_pfam, by=c("Geneid", c("samples"="Sample") ))
+```
+
+
+## collapse clusters
+```{r}
+pfam_counts_collapsed <- pfam_counts_long %>%
+  inner_join(clusters, by=c("contig", "Length"="length")) %>%
+  group_by(cluster, samples) %>%
+  dplyr::summarize(
+    total_mapped_reads=sum(ReadCounts),
+    average_contig_length=mean(Length),
+    total_contig_legnth=sum(Length),
+    total_tpm=sum(TPM)
+  )
+```
+
+## Getting number of contigs per assembly (this is just to have, not necessary for beta diversity)
+```{r}
+contig_counts <- tibble(samples = names(table(pfam_counts_collapsed$samples)),
+                        Cluster_count = table(pfam_counts_collapsed$samples))
+
+contig_counts <- contig_counts %>%
+  inner_join(metadata, by=c("samples")) %>%
+  filter(!duplicated(samples)) %>%
+  group_by(samples) %>%
+  dplyr::summarize(
+    average_contig_count=mean(Cluster_count)
+  )
+
+
+```
+
+## Using a TPM threshold
+```{r}
+table(pfam_counts_collapsed$total_tpm>10)
+```
+
+
+```{r}
+pfam_counts_collapsed_keep <- pfam_counts_collapsed[pfam_counts_collapsed$total_tpm>10,]
+```
+
+
+## format for beta diversity
+```{r}
+abund_table <- t(annotation_pfam_wide[,-1])
+colnames(abund_table) <- annotation_pfam_wide$Sample
+Sample <- rownames(abund_table)
+abund_table <- as_tibble(abund_table)
+abund_table$Sample <- Sample
+```
+
+```{r}
+metadata_uniq <- metadata[!duplicated(metadata$samples),]
+```
+
+
+## Bind metadata and abund_table
+#won't work until i fix issue with 'sample' in front of sample number
+```{r}
+merged <- left_join(abund_table, metadata_uniq, by = c("samples"))
+```
+
+
+```{r}
+abund_table[1:30,1:30]
+```
+
+
+```{r}
+write_tsv(as_tibble(annotation_pfam_wide), "abund_table_pfam_counts_normalized_clusters_with_metadata.txt")
+```
+
+## import pfam counts
+```{r}
+merged_pfam_counts <- read_tsv("~/Desktop/erie_story_r_work/abund_table_pfam_counts_normalized_clusters_with_metadata.tsv")
+```
+
+### Beta diversity with modified samples to exclude samples with missing params 
+
+##Create abundance table for diversity analyses
+```{r}
+
+abund_table <- merged_pfam_counts[-c((ncol(merged_pfam_counts)-25):ncol(merged_pfam_counts))]
+
+abund_table <- abund_table[-c(15,20,24,29),]
+```
+
+
+## create metadata for diversity analyses--removed rows and columns with multiple NAs
+```{r}
+metadata <- merged_pfam_counts[,c((ncol(merged_pfam_counts)-25):ncol(merged_pfam_counts))]
+
+metadata <- metadata[-c(15,20,24,29),]
+
+metadata <- metadata[,-c(6,19)]
+```
+
+
+##rename columns to be agreeable for plotting
+```{r}
+
+names(metadata)[names(metadata) == 'AquaFluor-PC'] <- "AquaFluor_PC"
+names(metadata)[names(metadata) == 'AquaFluor-CHL'] <- "AquaFluor_CHL"
+names(metadata)[names(metadata) == '10AU-CHL'] <- "TenAU_CHL"
+
+```
+
+
+## Use Bray Curtis to calculate distance between samples
+
+
+```{r}
+nmds_res <- vegan::metaMDS(abund_table, distance="bray", try=100)
+
+```
+
+
+##Perform envfit on continuous variables
+
+```{r}
+ef <- vegan::envfit(nmds_res, metadata[,c(5:24)], permu=999, na.rm=T)
+ef
+
+```
+
+#Plot NMDS with environmental params by station and fraction
+```{r}
+
+ss <- as.data.frame(nmds_res$points)
+
+ss$sample <- rownames(ss)
+ss$Station <- metadata$Station
+ss$Fraction <- metadata$fraction
+
+pal <- ggthemes::tableau_color_pal(palette="Tableau 20", type="regular")
+
+p1 <- ggplot(ss, aes(x=MDS1,y=MDS2)) + 
+  geom_point(aes( shape = Station, colour = Fraction, fill = Fraction), alpha=0.5, size=6) +
+  geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[2,1], yend=scores(ef, "vectors")[2,2],
+                 ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[2,1], y=scores(ef, "vectors")[2,2]),
+                label=names(ef$vectors$r)[2], nudge_x=0, nudge_y=0,size=5,
+            check_overlap = T) +
+  geom_segment(aes(x=0, y=0,
+                   xend=scores(ef, "vectors")[3,1], yend=scores(ef, "vectors")[3,2],
+                   ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[3,1], y=scores(ef, "vectors")[3,2]),
+                label=names(ef$vectors$r)[3], nudge_x=-0, nudge_y=-0, size=5,
+            check_overlap = T) +
+  geom_segment(aes(x=0, y=0,
+                   xend=scores(ef, "vectors")[7,1], yend=scores(ef, "vectors")[7,2],
+                   ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[7,1], y=scores(ef, "vectors")[7,2]),
+                label=names(ef$vectors$r)[7], nudge_y=0, size=5,
+            check_overlap = T) +
+  geom_segment(aes(x=0, y=0,
+                   xend=scores(ef, "vectors")[8,1], yend=scores(ef, "vectors")[8,2],
+                   ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[8,1], y=scores(ef, "vectors")[8,2]),
+                label=names(ef$vectors$r)[8], nudge_y=0, size=5,
+            check_overlap = T) +
+  geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[13,1], yend=scores(ef, "vectors")[13,2],
+                 ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[13,1], y=scores(ef, "vectors")[13,2]),
+                label=names(ef$vectors$r)[13], nudge_y=0, nudge_x=0, size=5,
+            check_overlap = T) +
+    geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[16,1], yend=scores(ef, "vectors")[16,2],
+                 ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[16,1], y=scores(ef, "vectors")[16,2]),
+                label=names(ef$vectors$r)[16], nudge_y=0, nudge_x=0, size=5,
+            check_overlap = T) +
+    geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[17,1], yend=scores(ef, "vectors")[17,2],
+                 ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[17,1], y=scores(ef, "vectors")[17,2]),
+                label=names(ef$vectors$r)[17], nudge_y=0, nudge_x=0, size=5,
+            check_overlap = T) +
+  scale_colour_jcolors(palette = "default") +
+   theme(panel.background = element_blank(),
+        text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        #axis.text=element_blank(),
+        #axis.ticks=element_blank(),
+        axis.title=element_text(size=16),
+        plot.title = element_text(size = 20, hjust = 0.5, colour = "black"),
+        legend.key=element_blank(),
+        legend.position="bottom",
+        legend.background = element_blank(),
+        legend.key.size = unit(.8, "line"),
+        legend.text=element_text(size=9),
+        legend.title = element_blank()) +
+  ggtitle("Lake Erie Viral Community NMDS Plot--Bray Curtis Dissimilarities") +
+  guides(size=FALSE) + xlab("NMDS 1") + ylab("NMDS 2") +
+  #scale_shape_manual(name="",
+  #                   values = c(13,4,2,10,5,8,0,6,3,12,14,1)) + 
+ # scale_color_manual(name="",
+ #                    values = alpha(pal(length(unique(ss$study))), 1)) + 
+ # scale_fill_manual(name="",
+ #                    values = alpha(pal(length(unique(ss$study))), 0.3)) + 
+  coord_equal()
+
+p1
+
+```
+
+
+#Plot NMDS with environmental params by date and fraction
+```{r}
+
+ss <- as.data.frame(nmds_res$points)
+
+ss$sample <- rownames(ss)
+ss$date <- metadata$Date
+ss$Fraction <- metadata$fraction
+
+p2 <- ggplot(ss, aes(x=MDS1,y=MDS2)) + 
+  geom_point(aes( shape = Fraction, colour = date, fill = date), alpha=1, size=6) +
+  geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[2,1], yend=scores(ef, "vectors")[2,2],
+                 ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[2,1], y=scores(ef, "vectors")[2,2]),
+                label=names(ef$vectors$r)[2], nudge_x=0, nudge_y=0,size=5,
+            check_overlap = T) +
+  geom_segment(aes(x=0, y=0,
+                   xend=scores(ef, "vectors")[3,1], yend=scores(ef, "vectors")[3,2],
+                   ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[3,1], y=scores(ef, "vectors")[3,2]),
+                label=names(ef$vectors$r)[3], nudge_x=-0, nudge_y=-0, size=5,
+            check_overlap = T) +
+  geom_segment(aes(x=0, y=0,
+                   xend=scores(ef, "vectors")[7,1], yend=scores(ef, "vectors")[7,2],
+                   ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[7,1], y=scores(ef, "vectors")[7,2]),
+                label=names(ef$vectors$r)[7], nudge_y=0, size=5,
+            check_overlap = T) +
+  geom_segment(aes(x=0, y=0,
+                   xend=scores(ef, "vectors")[8,1], yend=scores(ef, "vectors")[8,2],
+                   ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[8,1], y=scores(ef, "vectors")[8,2]),
+                label=names(ef$vectors$r)[8], nudge_y=0, size=5,
+            check_overlap = T) +
+  geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[13,1], yend=scores(ef, "vectors")[13,2],
+                 ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[13,1], y=scores(ef, "vectors")[13,2]),
+                label=names(ef$vectors$r)[13], nudge_y=0, nudge_x=0, size=5,
+            check_overlap = T) +
+    geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[16,1], yend=scores(ef, "vectors")[16,2],
+                 ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[16,1], y=scores(ef, "vectors")[16,2]),
+                label=names(ef$vectors$r)[16], nudge_y=0, nudge_x=0, size=5,
+            check_overlap = T) +
+    geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[17,1], yend=scores(ef, "vectors")[17,2],
+                 ), colour="black", arrow=arrow(length = unit(0.05,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[17,1], y=scores(ef, "vectors")[17,2]),
+                label=names(ef$vectors$r)[17], nudge_y=0, nudge_x=0, size=5,
+            check_overlap = T) +
+  scale_color_jcolors(palette = "pal8") +
+  scale_fill_jcolors(palette = "pal8") +
+   theme(panel.background = element_blank(),
+        text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        #axis.text=element_blank(),
+        #axis.ticks=element_blank(),
+        axis.title=element_text(size=16),
+        plot.title = element_text(size = 20, hjust = 0.5, colour = "black"),
+        legend.key=element_blank(),
+        legend.position="bottom",
+        legend.background = element_blank(),
+        legend.key.size = unit(.8, "line"),
+        legend.text=element_text(size=9),
+        legend.title = element_blank()) +
+  ggtitle("Lake Erie Viral Community NMDS Plot--Bray Curtis Dissimilarities") +
+  guides(size=FALSE) + xlab("NMDS 1") + ylab("NMDS 2") +
+  scale_shape_manual(name="",
+                     values = c(21,22,23,24,25)) + 
+  coord_equal()
+
+p2 
+
+```
+
+#Store NMDS ordination as PNG
+```{r}
+png("~/Desktop/erie_story_r_work/le_viral_comm_beta_div_with_continuous_params.png", width=800, height=800)
+p1
+dev.off()
+```
