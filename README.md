@@ -1,7 +1,6 @@
-# LE_2014_viral_community_dynamics
+# Tracking Ma viruses and infection dynamics across distinct Ma bloom phases
 
-Characterizing the viral community associated with Microcystis-dominated multi-peak cHABs in Lake Erie.
+Repository to accompany "Tracking Microcystis viruses and infection dynamics across distinct phases of a Microcystis-dominated bloom", Wing, et al. 2024.
 
-Repository for the Establishing Viral Community Dynamics in a 2014 Lake Erie cHAB project in the Duhaime lab.
+This code provides the scripts necessary to replicate the analyses described in the paper.
 
-This repository contains a collection of R and Linux scripts accessed to generate figures and perform data analysis for the project.
