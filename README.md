@@ -4,3 +4,10 @@ Repository to accompany "Tracking Microcystis viruses and infection dynamics acr
 
 This code provides the scripts necessary to replicate the analyses described in the paper.
 
+##Identify viral contigs
+
+##Build high confidence viral otus
+
+##Taxonomy and functional annotation of hosts and votus
+
+##Analyze diversity and function of viral populations in R
