@@ -1,0 +1,641 @@
+---
+title: "erie_2014_3_station_metadata_plotting_6_20_22"
+author: "A.J Wing"
+date: '2022-06-03'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Import Libraries
+
+```{r}
+library(tidyr)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(vegan)
+library(gridExtra)
+library(jcolors)
+library(plotly)
+library(cowplot)
+library(data.table)
+```
+
+
+## import metadata
+```{r}
+# importing metadata from a tab-separated file
+station_metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_3_station_metadata.tsv", col_names = T)
+```
+
+
+##get SE for environmental params
+```{r}
+# Calculate mean and standard deviation of various parameters by grouping data based on 'Site'
+station_metadata_mean <- station_metadata %>%
+  dplyr::group_by(Site) %>%
+  dplyr::summarise(mean_mc = mean(Particulate_Microcystin_ug_L)
+                   , sd_mc = sd(Particulate_Microcystin_ug_L)
+                   , mean_phyco = mean(Extracted_Phycocyanin_ug_p_L)
+                   , sd_phyco = sd(Extracted_Phycocyanin_ug_p_L)
+                   , mean_chla = mean(Extracted_chla_ug_L)
+                   , sd_chla = sd(Extracted_chla_ug_L))
+
+```
+
+
+#add calculated values to original station metadata
+```{r}
+# Merge the 'station_metadata' dataset with the 'station_metadata_mean' dataset based on the 'Site' column
+station_metadata_se <- left_join(station_metadata,station_metadata_mean,by="Site")
+
+# Check the dimensions of the resulting merged dataset
+dim(station_metadata_se)
+```
+
+##plot metadata
+```{r}
+# Create a Phycocyanin plot
+phyco_plot <- ggplot(station_metadata_se, aes(x=Date, y=Extracted_Phycocyanin_ug_p_L, color=Site)) + scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position=position_dodge(width=0.2), size=1.5) +
+  geom_errorbar(aes(ymin = mean_phyco - sd_phyco
+                      , ymax = mean_phyco + sd_phyco)
+                , position=position_dodge(width=0.4), size=0.4) +
+  #ggtitle("Phycocyanin Measurements") +
+  #xlab("Sampling Date") +
+  ylab("Phycocyanin µg/L") +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title.y=element_text(size=18),
+        axis.title.x =element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=16, colour = "black"),
+        axis.text.x  = element_blank(),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+phyco_plot
+
+# Create a Chlorophyll-a plot
+chla_plot <- ggplot(station_metadata_se, aes(x=Date, y=Extracted_chla_ug_L, color=Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position=position_dodge(width=0.2), size=1.5) +
+  geom_errorbar(aes(ymin = mean_chla - sd_chla
+                      , ymax = mean_chla + sd_chla)
+                , position=position_dodge(width=0.4), size=0.4) +
+  #ggtitle("Chl-a Measurements") +
+  #xlab("Sampling Date") +
+  ylab("Chla µg/L") +
+  labs(fill="Site") +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title.y=element_text(size=18),
+        axis.title.x =element_blank(),
+        legend.title = element_text(size=18),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=16, colour = "black"),
+        axis.text.x  = element_blank(),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+chla_plot
+
+
+# Create a microcystin plot
+microcystin_plot <- ggplot(station_metadata_se, aes(x=Date, y=Particulate_Microcystin_ug_L, color=Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position=position_dodge(width=0.2), size=1.5) +
+  geom_errorbar(aes(ymin = mean_mc - sd_mc
+                      , ymax = mean_mc + sd_mc)
+                , position=position_dodge(width=0.4), size=0.4) +
+  #ggtitle("Microcystin Measurements") +
+  xlab("Sampling Date") +
+  ylab("Microcystin µg/L") +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=18),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=16, colour = "black"),
+        axis.text.x  = element_text(size=16, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+microcystin_plot
+
+
+# Create a combination plot using grid.arrange
+combo_plot <- grid.arrange(phyco_plot, chla_plot, microcystin_plot,
+  ncol= 1, nrow= 3)
+
+# Display the combination plot
+combo_plot
+```
+
+#save as pdf
+```{r}
+pdf("~/Desktop/erie_story_r_work/2014_bloom_proxy_w_bars_1_27_23.pdf", width=9, height=6)
+combo_plot
+dev.off()
+```
+
+#save as png
+```{r}
+png("~/Desktop/erie_story_r_work/2014_bloom_proxy_w_bars_1_27_23.png", width=1000, height=600)
+combo_plot
+dev.off()
+```
+
+
+
+```{r}
+library(dplyr) #for data manipulation
+library(ggplot2) #for creating plots
+library(gridExtra) #for arranging plots
+
+# Import metadata
+station_metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_3_station_metadata.tsv", col_names = TRUE)
+
+# Get mean and se values for specific values grouped by site
+station_metadata_mean <- station_metadata %>%
+  group_by(Site) %>%
+  summarise(
+    mean_mc = mean(Particulate_Microcystin_ug_L),
+    se_mc = sd(Particulate_Microcystin_ug_L) / sqrt(n()),  # Calculate SE
+    mean_phyco = mean(Extracted_Phycocyanin_ug_p_L),
+    se_phyco = sd(Extracted_Phycocyanin_ug_p_L) / sqrt(n()),  # Calculate SE
+    mean_chla = mean(Extracted_chla_ug_L),
+    se_chla = sd(Extracted_chla_ug_L) / sqrt(n())  # Calculate SE
+  )
+
+# Add calculated values to original station metadata
+station_metadata_se <- left_join(station_metadata, station_metadata_mean, by = "Site")
+
+# Plot metadata
+# Create a Phycocyanin plot
+phyco_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_Phycocyanin_ug_p_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Extracted_Phycocyanin_ug_p_L - se_phyco, ymax = Extracted_Phycocyanin_ug_p_L + se_phyco),
+    position = position_dodge(width = 0.4),
+    size = 0.4
+  ) +
+  ylab("Phycocyanin µg/L") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_blank(),
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+# Create a CHLa plot
+chla_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_chla_ug_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Extracted_chla_ug_L - se_chla, ymax = Extracted_chla_ug_L + se_chla),
+    position = position_dodge(width = 0.4),
+    size = 0.4
+  ) +
+  ylab("Chla µg/L") +
+  labs(fill = "Site") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_blank(),
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+# Create a microcystin plot
+microcystin_plot <- ggplot(station_metadata_se, aes(x = Date, y = Particulate_Microcystin_ug_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Particulate_Microcystin_ug_L - se_mc, ymax = Particulate_Microcystin_ug_L + se_mc),
+    position = position_dodge(width = 0.4),
+    size = 0.4
+  ) +
+  xlab("Sampling Date") +
+  ylab("Microcystin µg/L") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title = element_text(size = 18),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 16, colour = "black"),
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+# Arrange the three plots in a single column
+combo_plot <- grid.arrange(phyco_plot, chla_plot, microcystin_plot,
+                           ncol = 1, nrow = 3)
+
+# Display the combination plot
+combo_plot
+
+```
+
+```{r}
+# Plot phyco with narrower error bars
+phyco_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_Phycocyanin_ug_p_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Extracted_Phycocyanin_ug_p_L - se_phyco, ymax = Extracted_Phycocyanin_ug_p_L + se_phyco),
+    position = position_dodge(width = 0.1),  # Adjust width here
+    size = 0.2
+  ) +
+  ylab("Phycocyanin µg/L") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_blank(),
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+# Plot chla with narrower error bars
+chla_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_chla_ug_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Extracted_chla_ug_L - se_chla, ymax = Extracted_chla_ug_L + se_chla),
+    position = position_dodge(width = 0.1),  # Adjust width here
+    size = 0.2
+  ) +
+  ylab("Chla µg/L") +
+  labs(fill = "Site") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_blank(),
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+# Plot microcystin with narrower error bars
+microcystin_plot <- ggplot(station_metadata_se, aes(x = Date, y = Particulate_Microcystin_ug_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Particulate_Microcystin_ug_L - se_mc, ymax = Particulate_Microcystin_ug_L + se_mc),
+    position = position_dodge(width = 0.1),  # Adjust width here
+    size = 0.2
+  ) +
+  xlab("Sampling Date") +
+  ylab("Microcystin µg/L") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title = element_text(size = 18),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 16, colour = "black"),
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+# Arrange the three plots in a single column
+combo_plot <- grid.arrange(phyco_plot, chla_plot, microcystin_plot,
+                           ncol = 1, nrow = 3)
+
+# Display the combination plot
+combo_plot
+
+```
+
+```{r}
+# Plot metadata with modified x-axis for all three plots
+phyco_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_Phycocyanin_ug_p_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Extracted_Phycocyanin_ug_p_L - se_phyco, ymax = Extracted_Phycocyanin_ug_p_L + se_phyco),
+    position = position_dodge(width = 0.1),  # Adjust width here
+    size = 0.4
+  ) +
+  ylab("Phycocyanin µg/L") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%Y-%m-%d") +  # Modify x-axis format
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black"),  # Adjust text size
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+chla_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_chla_ug_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Extracted_chla_ug_L - se_chla, ymax = Extracted_chla_ug_L + se_chla),
+    position = position_dodge(width = 0.1),  # Adjust width here
+    size = 0.4
+  ) +
+  ylab("Chla µg/L") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%Y-%m-%d") +  # Modify x-axis format
+  labs(fill = "Site") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black"),  # Adjust text size
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+microcystin_plot <- ggplot(station_metadata_se, aes(x = Date, y = Particulate_Microcystin_ug_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Particulate_Microcystin_ug_L - se_mc, ymax = Particulate_Microcystin_ug_L + se_mc),
+    position = position_dodge(width = 0.1),  # Adjust width here
+    size = 0.4
+  ) +
+  xlab("Sampling Date") +
+  ylab("Microcystin µg/L") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%Y-%m-%d") +  # Modify x-axis format
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title = element_text(size = 18),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black"),  # Adjust text size
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+combo_plot <- grid.arrange(phyco_plot, chla_plot, microcystin_plot,
+                           ncol = 1, nrow = 3)
+
+combo_plot
+
+```
+
+```{r}
+# Plot metadata with modified x-axis format
+phyco_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_Phycocyanin_ug_p_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Extracted_Phycocyanin_ug_p_L - se_phyco, ymax = Extracted_Phycocyanin_ug_p_L + se_phyco),
+    position = position_dodge(width = 0.1),  # Adjust width here
+    size = 0.4
+  ) +
+  ylab("Phycocyanin µg/L") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%d") +  # Modify x-axis format
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black"),  # Adjust text size
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+# Repeat the same modifications for chla_plot and microcystin_plot
+
+# ...
+
+combo_plot <- grid.arrange(phyco_plot, chla_plot, microcystin_plot,
+                           ncol = 1, nrow = 3)
+
+combo_plot
+
+```
+
+```{r}
+# Plot metadata with specific dates on x-axis for all three plots
+phyco_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_Phycocyanin_ug_p_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Extracted_Phycocyanin_ug_p_L - se_phyco, ymax = Extracted_Phycocyanin_ug_p_L + se_phyco),
+    position = position_dodge(width = 0.1),  # Adjust width here
+    size = 0.4
+  ) +
+  ylab("Phycocyanin µg/L") +
+  scale_x_date(date_breaks = "1 week", date_labels = "%b-%d") +  # Modify x-axis format to weekly intervals
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black"),  # Adjust text size
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+chla_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_chla_ug_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Extracted_chla_ug_L - se_chla, ymax = Extracted_chla_ug_L + se_chla),
+    position = position_dodge(width = 0.1),  # Adjust width here
+    size = 0.4
+  ) +
+  ylab("Chla µg/L") +
+  scale_x_date(date_breaks = "1 week", date_labels = "%b-%d") +  # Modify x-axis format to weekly intervals
+  labs(fill = "Site") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black"),  # Adjust text size
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+microcystin_plot <- ggplot(station_metadata_se, aes(x = Date, y = Particulate_Microcystin_ug_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  geom_errorbar(
+    aes(ymin = Particulate_Microcystin_ug_L - se_mc, ymax = Particulate_Microcystin_ug_L + se_mc),
+    position = position_dodge(width = 0.1),  # Adjust width here
+    size = 0.4
+  ) +
+  xlab("Sampling Date") +
+  ylab("Microcystin µg/L") +
+  scale_x_date(date_breaks = "1 week", date_labels = "%b-%d") +  # Modify x-axis format to weekly intervals
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title = element_text(size = 18),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black"),  # Adjust text size
+        plot.margin = unit(c(1, 1, 1, 1), "lines")
+  )
+
+combo_plot <- grid.arrange(phyco_plot, chla_plot, microcystin_plot,
+                           ncol = 1, nrow = 3)
+
+combo_plot
+
+
+```
+
+```{r}
+phyco_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_Phycocyanin_ug_p_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  ylab("Phycocyanin µg/L") +
+  scale_x_date(date_breaks = "1 week", date_labels = "%b-%d") +  # Modify x-axis format to weekly intervals
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black")  # Adjust text size
+  )
+
+chla_plot <- ggplot(station_metadata_se, aes(x = Date, y = Extracted_chla_ug_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  ylab("Chla µg/L") +
+  scale_x_date(date_breaks = "1 week", date_labels = "%b-%d") +  # Modify x-axis format to weekly intervals
+  labs(fill = "Site") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black")  # Adjust text size
+  )
+
+microcystin_plot <- ggplot(station_metadata_se, aes(x = Date, y = Particulate_Microcystin_ug_L, color = Site)) +
+  scale_color_manual(values = c('firebrick1', 'darkgoldenrod1', 'royalblue2')) +
+  geom_line(position = position_dodge(width = 0.2), size = 1.5) +
+  xlab("Sampling Date") +
+  ylab("Microcystin µg/L") +
+  scale_x_date(date_breaks = "1 week", date_labels = "%b-%d") +  # Modify x-axis format to weekly intervals
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title = element_text(size = 18),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size = 16, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black")  # Adjust text size
+  )
+
+combo_plot <- grid.arrange(phyco_plot, chla_plot, microcystin_plot,
+                           ncol = 1, nrow = 3)
+
+combo_plot
+
+```
+
+```{r}
+pdf("~/Desktop/paper_one_figs/2014_bloom_proxy_no_bars_11_7_23.pdf", width=9, height=6)
+combo_plot
+dev.off()
+```
+
+```{r}
+png("~/Desktop/paper_one_figs/2014_bloom_proxy_no_bars_11_7_23.png", width=1000, height=600)
+combo_plot
+dev.off()
+```

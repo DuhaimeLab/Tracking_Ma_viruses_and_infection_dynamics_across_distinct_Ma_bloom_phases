@@ -1,0 +1,86 @@
+---
+title: "blast_all_host_spacers_vs_all_erie_viral_contigs"
+author: "A.J Wing"
+date: "2023-02-15"
+output: html_document
+---
+
+
+
+##import blast data and rename columns
+```{r}
+blast_hits <- read_tsv('~/Desktop/erie_story_r_work/all_lake_erie_viruses_vs_all_host_spacers_blastn.csv', col_names=FALSE)
+names(blast_hits)[names(blast_hits) == 'X1'] <- "query_id"
+names(blast_hits)[names(blast_hits) == 'X2'] <- "subject_id"
+names(blast_hits)[names(blast_hits) == 'X3'] <- "percent_id"
+names(blast_hits)[names(blast_hits) == 'X4'] <- "length"
+names(blast_hits)[names(blast_hits) == 'X5'] <- "mismatches"
+names(blast_hits)[names(blast_hits) == 'X6'] <- "gap_openings"
+names(blast_hits)[names(blast_hits) == 'X7'] <- "query_start"
+names(blast_hits)[names(blast_hits) == 'X8'] <- "query_end"
+names(blast_hits)[names(blast_hits) == 'X9'] <- "subject_start"
+names(blast_hits)[names(blast_hits) == 'X10'] <- "subject_end"
+names(blast_hits)[names(blast_hits) == 'X11'] <- "e_value"
+names(blast_hits)[names(blast_hits) == 'X12'] <- "bit_score"
+```
+
+
+##import erie viral contig lengths
+```{r}
+lengths <- read_tsv("~/Desktop/erie_story_r_work/all_2014_virus_lengths.tsv")
+names(lengths)[names(lengths) == 'bin'] <- "subject_id"
+```
+
+
+##add subject lengths to blast hits
+```{r}
+blast_hits <- left_join(blast_hits,lengths,by="subject_id")
+names(blast_hits)[names(blast_hits) == 'length.y'] <- "subject_length"
+names(blast_hits)[names(blast_hits) == 'length.x'] <- "hit_lengths"
+dim(blast_hits)
+```
+
+##import viral populations
+```{r}
+clusters <- read_tsv("~/Desktop/erie_story_r_work/merged_3kb_trimmed_viruses_and_ma_virus_references_95-85_clusters_parsed.tsv", col_names=T)
+names(clusters)[names(clusters) == 'contig'] <- "query_id"
+clusters <- clusters[, c("cluster", "subject_id")]
+```
+
+
+#add viral populations to blast hits
+```{r}
+blast_hits <- left_join(blast_hits,clusters,by="query_id")
+```
+
+
+##count unique occurences of query and subject columns
+
+```{r}
+length(unique(blast_hits$query_id))
+
+length(unique(blast_hits$subject_id))
+
+```
+
+#count number of hits for each query and subject column
+```{r}
+table(blast_hits$query_id)
+
+table(blast_hits$subject_id)
+```
+
+#distribution of vps and the number of dates they were present in
+```{r}
+table(ma_viruses_with_vp_tpm_num_dates$number_dates)
+```
+
+```{r}
+VP_number_dates <- read_tsv("~/Desktop/erie_story_r_work/VP_number_of_sample_dates.tsv", col_names=T)
+colnames(VP_number_dates)[1] <- "cluster"
+```
+
+```{r}
+clusters_with_dates <- left_join(clusters,VP_number_dates,by="cluster")
+dim(ma_viruses_with_vp_and_tpm)
+```

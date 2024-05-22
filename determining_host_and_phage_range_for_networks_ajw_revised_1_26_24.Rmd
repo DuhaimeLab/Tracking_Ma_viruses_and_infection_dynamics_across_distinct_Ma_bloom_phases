@@ -1,0 +1,128 @@
+---
+title: "determining range of hosts and viruses in infection prediction network"
+author: "A.J Wing"
+date: "2023-04-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##import cutoff predictions
+```{r}
+HABs2014_aug_bloom <- read_tsv('~/Desktop/erie_story_r_work/10kb_cutoff_aug_bloom_with_ma_phage_093thresh_1_30_23.tsv')
+
+
+HABs2014_sep_bloom <- read_tsv('~/Desktop/erie_story_r_work/10kb_cutoff_sep_bloom_with_ma_phage_093thresh_1_30_23.tsv')
+
+```
+
+##now bind aug4 and sep29 ma virus tpm norm'd counts
+```{r}
+both_peaks_predictions <- rbind(HABs2014_aug_bloom,HABs2014_sep_bloom)
+dim(both_peaks_predictions)
+```
+
+
+```{r}
+metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata_updated_8_9_22.tsv")
+metadata$sample <- gsub("Sample_","",metadata$samples)
+```
+
+```{r}
+
+both_peaks_predictions$sample <-as.character(both_peaks_predictions$sample)
+metadata$sample <-as.character(metadata$sample)
+
+
+both_peaks_predictions <- left_join(both_peaks_predictions,metadata,by="sample")
+```
+
+```{r}
+both_peaks_predictions <- both_peaks_predictions[both_peaks_predictions$Predictions == "1", ]
+```
+
+```{r}
+lengths <- read_tsv("~/Desktop/erie_story_r_work/all_2014_virus_lengths.tsv")
+```
+
+```{r}
+both_peaks_predictions <- both_peaks_predictions[both_peaks_predictions$length>=10000,]
+```
+
+```{r}
+
+both_peaks_predictions_aug <- both_peaks_predictions[both_peaks_predictions$Date == "4-Aug-14", ]
+
+```
+
+```{r}
+
+both_peaks_predictions_sep <- both_peaks_predictions[both_peaks_predictions$Date == "29-Sep-14", ]
+
+```
+
+##get number of hosts per viral population
+```{r}
+uniq_phage <- unique(both_peaks_predictions_aug$phage)
+number_host <- vector(mode = "integer", length(uniq_phage))
+
+for(i in 1:length(uniq_phage)){
+  cur <- uniq_phage[i]
+  temp <- both_peaks_predictions_aug[which(both_peaks_predictions_aug$phage == cur), ]
+  number_host[i] <- nrow(temp)
+}
+
+number_hosts_aug <- data.frame(uniq_phage, number_host)
+number_hosts_aug
+```
+
+##get number of hosts per viral population
+```{r}
+uniq_phage <- unique(both_peaks_predictions_sep$phage)
+number_host <- vector(mode = "integer", length(uniq_phage))
+
+for(i in 1:length(uniq_phage)){
+  cur <- uniq_phage[i]
+  temp <- both_peaks_predictions_sep[which(both_peaks_predictions_sep$phage == cur), ]
+  number_host[i] <- nrow(temp)
+}
+
+number_hosts_sep <- data.frame(uniq_phage, number_host)
+number_hosts_sep
+```
+
+
+###now get number of viruses per host for august
+
+
+```{r}
+uniq_host <- unique(both_peaks_predictions_aug$host)
+number_phage <- vector(mode = "integer", length(uniq_host))
+
+for(i in 1:length(uniq_host)){
+  cur <- uniq_host[i]
+  temp <- both_peaks_predictions_aug[which(both_peaks_predictions_aug$host == cur), ]
+  number_phage[i] <- nrow(temp)
+}
+
+number_phages_aug <- data.frame(uniq_host, number_phage)
+number_phages_aug
+
+```
+
+```{r}
+uniq_host <- unique(both_peaks_predictions_sep$host)
+number_phage <- vector(mode = "integer", length(uniq_host))
+
+for(i in 1:length(uniq_host)){
+  cur <- uniq_host[i]
+  temp <- both_peaks_predictions_sep[which(both_peaks_predictions_sep$host == cur), ]
+  number_phage[i] <- nrow(temp)
+}
+
+number_phages_sep <- data.frame(uniq_host, number_phage)
+number_phages_sep
+
+```

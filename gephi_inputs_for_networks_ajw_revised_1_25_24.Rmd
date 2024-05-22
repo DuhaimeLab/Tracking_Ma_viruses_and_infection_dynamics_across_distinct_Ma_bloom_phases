@@ -1,0 +1,212 @@
+---
+title: "Gephi inputs for networks"
+author: "A.J Wing"
+date: "2022-12-29"
+output: html_document
+---
+
+
+Libraries
+```{r}
+library(tidyverse)
+```
+
+
+Data
+```{r}
+data <- read_csv('~/Desktop/erie_story_r_work/isolate_nd_104_predictions_11_16_23.csv')
+```
+
+Filenames to use to save the nodes and edges files. 
+```{r}
+nodename <- '~/Desktop/erie_story_r_work/isolate_nd_104_predictions_nodes_11_16_23.csv'
+edgename <- '~/Desktop/erie_story_r_work/isolate_nd_104_predictions_edges_11_16_23.csv'
+```
+
+```{r}
+# Remove rows with NA in the 'phage' column
+data <- data[!is.na(data$phage), ]
+
+
+```
+
+
+# Nodes
+
+First, the node list need to be created. In this case, a node either represent a unique virus or a unique host. 
+
+```{r}
+# retrieve unique names for viruses and hosts
+Name <- c(unique(data$phage), unique(data$host))
+Type <- c(rep('Virus', length(unique(data$phage))), rep('Host', length(unique(data$host))))
+
+# create ID vector (sequence of numbers of same length as Name)
+ID <- seq(length(Name))
+
+# create the nodes dataframe
+nodes <- tibble(ID, Name, Type)
+
+```
+
+This is bare minimum needed for the nodes dataframe. The code chunk below adds properties related to the nodes. 
+
+```{r}
+# add code here
+```
+
+
+# Edges
+
+Next we need to create the edge list. The edge list encode which nodes are connected together. It needs a source (which will always be
+the viruses) and a target (which will always be the host). In addition, it needs the type (undirected = no arrows) and the weight (for now
+we will use 1).
+
+The predictions data is already an edge list since it represents predicted interactions. However, instead of using phagename and host name, it 
+needs to use the ID numbers from the node list. 
+```{r}
+# make a copy of edges
+edges <- data
+
+# parameters
+weight <- 1
+type <- 'undirected'
+
+# create new columns in the edges dataframe
+edges['Weight'] <- weight
+edges['Type'] <- type
+edges['Source'] <- NA
+edges['Target'] <- NA
+
+# fill the Source and Target columns
+for(i in 1:nrow(data)){
+  
+  # retrieve virus and host name
+  virus <- data$phage[i]
+  host <- data$host[i]
+  
+  # retrieve their ID numbers and store them in their respective columns in the edges dataframe
+  virusID <- nodes$ID[which(nodes$Name == virus)]
+  hostID <- nodes$ID[which(nodes$Name == host)]
+  
+  # store value
+  edges$Source[i] <- virusID
+  edges$Target[i] <- hostID
+
+}
+
+```
+
+
+
+
+
+#now lets add polygon columns to our nodes so we can change their shape in gephi 
+```{r}
+
+nodes$polygon <- nodes$Type
+nodes$polygon <- gsub("Host", "2", nodes$polygon)
+nodes$polygon <- gsub("Virus", "3", nodes$polygon)
+```
+
+```{r}
+phage_nodes <- subset(nodes, grepl("Virus", Type))
+
+host_nodes <- subset(nodes, grepl("Host", Type))
+```
+
+```{r}
+#custom_taxonomy <- read_tsv("~/Desktop/erie_story_r_work/all_samples_10kb_viral_pops.PTT.virus-taxonomy.tsv")
+#names(custom_taxonomy)[names(custom_taxonomy) == 'scaffold'] <- "phage"
+
+```
+
+```{r}
+#names(phage_nodes)[names(phage_nodes) == 'Name'] <- "phage"
+
+# Merge with all.x = TRUE to keep all rows from phage_nodes
+#phage_nodes <- merge(phage_nodes, custom_taxonomy, by = "phage", all.x = TRUE)
+
+```
+
+```{r}
+#names(phage_nodes)[names(phage_nodes) == 'Name'] <- "phage"
+
+# Merge with all.x = TRUE to keep all rows from phage_nodes
+#phage_nodes <- merge(phage_nodes, custom_taxonomy, by = "phage", all.x = TRUE)
+
+```
+##import metadata
+```{r}
+metadata <- read_tsv("~/Desktop/erie_story_r_work/chapter_3_ma_isolate_metadata_ajw_10_18_23.tsv")
+
+```
+
+```{r}
+# Assuming your data frame is named 'phage_nodes'
+phage_nodes$Sample_Key <- sub(".*--(ND_[0-9]+).*", "\\1", phage_nodes$Name)
+phage_nodes$Sample_Key <- gsub("_", "-", phage_nodes$Sample_Key)
+
+```
+
+```{r}
+# Extract Sample_Key from Name
+
+host_nodes$Sample_Key <- sub("^([^_]+_[^_]+)_.*$", "\\1", host_nodes$Name)
+host_nodes$Sample_Key <- gsub("_", "-", host_nodes$Sample_Key)
+
+```
+
+
+```{r}
+stacked_nodes <- bind_rows(phage_nodes, host_nodes)
+```
+
+```{r}
+# Assuming 'Sample_Key' is the common column between the data frames
+merged_data <- merge(stacked_nodes, metadata, by = "Sample_Key", all.x = TRUE)
+
+```
+
+```{r}
+# Select the desired columns
+merged_data <- merged_data[, c("ID", "Name", "Type", "polygon", "Sample_Key", "Collection_Date", "Station")]
+
+
+
+```
+
+# Save files
+
+```{r}
+write_csv(merged_data, nodename)
+write_csv(edges, edgename)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

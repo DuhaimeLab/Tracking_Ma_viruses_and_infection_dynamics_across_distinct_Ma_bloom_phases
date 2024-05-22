@@ -1,0 +1,484 @@
+---
+title: "peak_info_orf_exploration_9_15_22"
+author: "A.J Wing"
+date: '2022-09-15'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyr)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(RColorBrewer)
+library(pheatmap)
+library(vegan)
+library(ggthemes)
+library(dendextend)
+library(stringr)
+```
+
+# Imports
+
+## import read coverage data
+
+```{r}
+coverage <- read_tsv("~/Desktop/erie_story_r_work/merged_viral_ORF_count.txt", col_names = T)
+colnames(coverage)[ncol(coverage)] <- "Counts"
+coverage$ComboId <- gsub("FeatureCountsORFs/", "", coverage$ComboId)
+coverage$ComboId <- gsub("_viral_ORF_count.txt", "", coverage$ComboId)
+coverage <- separate(coverage, col="ComboId", into=c("Assembly", "Sample"), sep = "--", remove = F)
+coverage$Chr <- gsub("\\.", "_", coverage$Chr)
+```
+
+```{r}
+head(coverage)
+```
+
+
+## import DRAM annotations
+
+```{r}
+annotations <- read_tsv("~/Desktop/erie_story_r_work/merged_annotations.tsv", col_names = T)
+colnames(annotations)[2] <- "Geneid"
+colnames(annotations)[4] <- "UniqContig"
+colnames(annotations)[5] <- "Start"
+colnames(annotations)[7] <- "End"
+annotations <- annotations[,-1]
+annotations <- separate(annotations, col="UniqContig", into=c("Assembly", "Contig"), sep = "--", remove = F)
+
+```
+
+```{r}
+head(annotations)
+```
+
+
+
+## import sample metadata
+
+```{r}
+metadata2 <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata_updated_12_15_21.tsv", col_names = T)
+```
+
+# Get Counts by KEGG
+
+```{r}
+annotation_coverage <- right_join(annotations, coverage, 
+                                 by=c("Geneid", "Assembly"))
+```
+
+```{r}
+all_ma_viruses <- read_tsv("~/Desktop/erie_story_r_work/unique_both_peaks_ma_virus_tpm_norm_counts.tsv", col_names = T)
+names(all_ma_viruses)[names(all_ma_viruses) == 'contig'] <- "UniqContig"
+```
+
+```{r}
+annotation_coverage <- left_join(all_ma_viruses, annotation_coverage, by = c("UniqContig"))
+
+annotation_coverage$bloom_period <-annotation_coverage$Assembly
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49613"] <- "pre_bloom"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49614"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49615"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49616"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49617"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49618"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49619"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49620"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49621"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49622"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49623"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49624"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49625"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49626"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49627"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49628"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49629"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49630"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49631"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49632"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49633"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49634"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49635"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49636"] <- "pre_bloom"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49637"] <- "pre_bloom"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49638"] <- "post_bloom"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49639"] <- "pre_bloom"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49640"] <- "peak_one"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49641"] <- "peak_two"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="49642"] <- "pre_bloom"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="53598"] <- "pre_bloom"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="53599"] <- "pre_bloom"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="53600"] <- "between_peaks"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="53601"] <- "between_peaks"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="53602"] <- "between_peaks"
+annotation_coverage$bloom_period[annotation_coverage$bloom_period=="53603"] <- "post_bloom"
+```
+
+##change to part of bloom of interest here
+```{r}
+annotation_coverage <- annotation_coverage[annotation_coverage$bloom_period=="peak_two",]
+```
+
+```{r}
+annotation_coverage_peak_info <- annotation_coverage
+```
+
+
+D=only hit to PFAM
+
+```{r}
+annotation_coverage_peak_info_pfam <- annotation_coverage_peak_info[annotation_coverage_peak_info$rank!="E",]
+```
+
+
+```{r}
+annotation_coverage_peak_info_pfam <- annotation_coverage_peak_info_pfam %>% 
+    separate(pfam_hits, into="pfam_hits", sep=";")
+```
+
+```{r}
+head(sort(table(annotation_coverage_peak_info_pfam$pfam_hits), decreasing=T), n=20)
+```
+
+```{r}
+peak_info_orf_summary <- tibble(pfam=names(table(annotation_coverage_peak_info_pfam$pfam_hits)),
+                      Frequency=table(annotation_coverage_peak_info_pfam$pfam_hits))
+
+peak_info_orf_summary$Proportion_pfam <- peak_info_orf_summary$Frequency/(nrow(annotation_coverage_peak_info_pfam))
+
+peak_info_orf_summary <- peak_info_orf_summary[order(peak_info_orf_summary$Proportion_pfam, decreasing=T),] 
+```
+
+```{r}
+peak_info_orf_summary$pfam <- factor(peak_info_orf_summary$pfam, levels=peak_info_orf_summary$pfam[order(peak_info_orf_summary$Proportion_pfam)])
+```
+
+```{r}
+head(peak_info_orf_summary, n=50)
+```
+
+```{r}
+peak_info_orf_summary_head <- peak_info_orf_summary[1:33,]
+```
+
+for bloom peak 1
+```{r}
+peak_info_orf_summary_head$gene_type <- c("phage non-structural", "phage non-structural", "phage non-structural", "phage structural", "phage structural", "phage non-structural", "phage structural", "phage non-structural", "phage non-structural", "phage structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage structural", "phage non-structural", "phage non-structural", "phage non-structural", "unidentified", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "unidentified") 
+```
+
+
+for bloom peak 2
+```{r}
+peak_info_orf_summary_head$gene_type <- c("phage non-structural", "phage non-structural", "phage non-structural", "phage structural", "phage structural", "phage non-structural", "phage structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "phage non-structural", "unidentified", "phage non-structural", "phage non-structural", "phage structural") 
+```
+
+```{r}
+peak_info_orf_summary_head$Proportion_pfam <- peak_info_orf_summary_head$Proportion_pfam*100
+```
+
+```{r}
+pal <- ggthemes::tableau_color_pal(palette="Classic Green-Orange 12", type="regular")
+```
+
+```{r}
+peak_info_pfam_abund <- ggplot(peak_info_orf_summary_head, 
+                        aes(x=Proportion_pfam, y=pfam,
+                            color=gene_type, fill=gene_type)) + 
+  geom_bar(stat="identity") +
+  #geom_text(aes(label = pfam), hjust = -0.05)
+  theme(panel.background = element_blank(), 
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "white", fill=NA, size=1),
+        axis.title=element_text(size=20),
+        axis.ticks=element_blank(),
+        legend.key=element_blank(),
+        legend.position="bottom",
+        legend.background = element_blank(),
+        legend.key.size = unit(.8, "line"),
+        text=element_text(size=10)) +
+        #panel.grid.major.x=element_line(color="grey")) +
+  guides(size="none") + xlab("Percent of Genes") + ylab("") +
+  scale_color_manual(name="",
+                     values = alpha(pal(3), 1)) + 
+  scale_fill_manual(name="",
+                     values = alpha(pal(3), 0.7))
+
+peak_info_pfam_abund
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/peak_one_info_top_pfam_proportion.png", width=10, height=10, units="in", res=300)
+peak_info_pfam_abund     
+dev.off()
+```
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/peak_one_info_top_pfam_proportion.pdf", width=8, height=8)
+peak_info_pfam_abund     
+dev.off()
+```
+
+```{r}
+head(sort(table(annotation_coverage_peak_info_pfam$vogdb_hit), decreasing=T), n=20)
+```
+
+```{r}
+head(annotation_coverage_peak_info_pfam)
+```
+
+### VOG database categories
+
+VIRUS STRUCTURE AND REPLICATION [Xr] Virus replication [Xs] Virus structure
+
+VIRUS HOST INTERACTION [Xh] Virus protein with function beneficial for the host [Xp] Virus protein with function beneficial for the virus
+
+POORLY CHARACTERIZED [Xu] Function unknown
+
+```{r}
+length(table(annotation_coverage_peak_info_pfam$pfam_hits))
+```
+
+C= forward hit only to KEGG or UniRef90 =\> only used KEGG, so this just gives the contigs with a KEGG annotation from DRAM
+
+```{r}
+annotation_coverage_peak_info_kegg <- annotation_coverage_peak_info[annotation_coverage_peak_info$rank=="C",]
+```
+
+```{r}
+annotation_coverage_peak_info_kegg <- annotation_coverage_peak_info_kegg %>% 
+    separate(kegg_id, into="kegg_id", sep=",")
+```
+
+only 5% of genes had multiple KEGG annotations and most were duplicates of the same KEGG, so just took first.
+
+```{r}
+head(sort(table(annotation_coverage_peak_info_kegg$kegg_id)/nrow(annotation_coverage_peak_info_kegg), decreasing=T), n=50)
+```
+
+```{r}
+peak_info_orf_summary <- tibble(KO=names(table(annotation_coverage_peak_info_kegg$kegg_id)),
+                      Frequency=table(annotation_coverage_peak_info_kegg$kegg_id))
+
+peak_info_orf_summary$Proportion_KO <- peak_info_orf_summary$Frequency/nrow(annotation_coverage_peak_info_kegg)
+
+peak_info_orf_summary <- peak_info_orf_summary[order(peak_info_orf_summary$Proportion_KO, decreasing=T),] 
+
+peak_info_orf_summary$KO <- factor(peak_info_orf_summary$KO, levels=peak_info_orf_summary$KO[order(peak_info_orf_summary$Proportion_KO)])
+```
+
+```{r}
+peak_info_ko_abund <- ggplot(peak_info_orf_summary[1:10,], 
+                        aes(x=Proportion_KO, y=KO)) + 
+  geom_bar(stat="identity") + 
+  theme(panel.background = element_blank(), 
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "purple", fill=NA, size=1),
+        axis.title=element_text(size=30),
+        axis.ticks=element_blank(),
+        legend.key=element_blank(),
+        legend.position="right",
+        legend.background = element_blank(),
+        legend.key.size = unit(.8, "line"),
+        text=element_text(size=10)) +
+  guides(size="none") + xlab("KO Proportion") + ylab("") 
+
+peak_info_ko_abund
+```
+
+```{r}
+svg
+```
+
+# Looking at Nitrogen Genes
+
+# Making some summary figures of KO abundance [continue below for making datatables]
+
+## Faceted by Pathway Modules
+
+```{r}
+peak_info_orf_summary <- tibble(KO=names(table(annotation_coverage_peak_info_kegg$kegg_id)),
+                      Frequency=table(annotation_coverage_peak_info_kegg$kegg_id))
+
+peak_info_orf_summary$Proportion_KO <- peak_info_orf_summary$Frequency/nrow(annotation_coverage_peak_info_kegg)
+```
+
+```{r}
+peak_info_orf_abundance_summary <- annotation_coverage_peak_info_kegg %>%
+    group_by(kegg_id) %>%
+    dplyr::summarize(
+      across(starts_with("Counts"), sum)
+    ) 
+
+peak_info_orf_abundance_summary$Proportion_Abund <- peak_info_orf_abundance_summary$Counts/sum(peak_info_orf_abundance_summary$Counts)
+```
+
+## KO hierarchy info
+
+```{r}
+library(data.table)
+
+peak_info_kegg_metabolism <- readLines("~/Desktop/erie_story_r_work/kegg_metabolism.txt")
+peak_info_kegg_metabolism <- str_split(peak_info_kegg_metabolism, pattern = "\t", n = 4)
+peak_info_kegg_metabolism <- data.frame(peak_info_kegg_metabolism)
+peak_info_kegg_metabolism <- data.frame(t(peak_info_kegg_metabolism))
+rownames(peak_info_kegg_metabolism) <- NULL
+temp <- data.frame(tstrsplit(peak_info_kegg_metabolism[,4], split = "\t"))
+ peak_info_kegg_metabolism <- cbind.data.frame(peak_info_kegg_metabolism[,1:3], temp)
+colnames(peak_info_kegg_metabolism) <- c("Level1", "Level2", "Level3", "KO", "Level4")
+```
+
+```{r}
+peak_info_orf_summary <- inner_join(peak_info_orf_summary, peak_info_orf_abundance_summary, by=c("KO"="kegg_id"))
+peak_info_orf_summary <- left_join(peak_info_orf_summary, peak_info_kegg_metabolism, by=c("KO"))
+
+peak_info_orf_summary <- peak_info_orf_summary[!base::duplicated(peak_info_orf_summary$KO),]
+```
+
+```{r}
+peak_info_reads_vs_freq <- ggplot(peak_info_orf_summary[!(is.na(peak_info_orf_summary$Level2)),], 
+                        aes(x=Proportion_KO, y=Proportion_Abund)) + 
+  geom_point(aes(colour = Level2, fill = Level2), size=2, alpha=0.2) +
+  geom_segment(aes(x=0, y=0,
+               xend=0.0051, yend=0.0051), color="grey") + 
+  theme(panel.background = element_blank(), 
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "grey", fill=NA, size=1),
+        axis.title=element_text(size=30),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        legend.key=element_blank(),
+        legend.position="right",
+        legend.background = element_blank(),
+        legend.key.size = unit(.8, "line"),
+        text=element_text(size=10)) +
+  guides(size="none") + xlab("KO Occurrence Frequency") + ylab("KO Read Count Abundance") +
+  facet_wrap(~Level2, nrow=3)
+
+peak_info_reads_vs_freq
+```
+
+```{r}
+peak_info_orf_summary_high <- peak_info_orf_summary[peak_info_orf_summary$Proportion_KO>0.001 | peak_info_orf_summary$Proportion_Abund>0.001,]
+
+```
+
+## Merging by Pathway Modules
+
+```{r}
+peak_info_annotation_coverage_level2 <- inner_join(annotation_coverage_peak_info_kegg, peak_info_kegg_metabolism, by=c("kegg_id"="KO"))
+
+peak_info_level2_summary <- tibble(PathwayModule=names(table(peak_info_annotation_coverage_level2$Level2)),
+                      Frequency=table(peak_info_annotation_coverage_level2$Level2))
+
+peak_info_level2_summary$Proportion_KO <- peak_info_level2_summary$Frequency/nrow(peak_info_annotation_coverage_level2)
+```
+
+```{r}
+peak_info_level2_abundance_summary <- peak_info_annotation_coverage_level2 %>%
+    group_by(Level2) %>%
+    dplyr::summarize(
+      across(starts_with("Counts"), sum)
+    ) 
+
+peak_info_level2_abundance_summary$Proportion_Abund <- peak_info_level2_abundance_summary$Counts/sum(peak_info_level2_abundance_summary$Counts)
+```
+
+```{r}
+peak_info_level2_summary <- inner_join(peak_info_level2_summary, peak_info_level2_abundance_summary, by=c("PathwayModule"="Level2"))
+```
+
+```{r}
+peak_info_reads_vs_freq <- ggplot(peak_info_level2_summary, 
+                        aes(x=Proportion_KO, y=Proportion_Abund)) + 
+  geom_point(aes(colour = PathwayModule, fill = PathwayModule), size=4) +
+  geom_segment(aes(x=0, y=0,
+               xend=0.5, yend=0.5), color="grey") + 
+  theme(panel.background = element_blank(), 
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "grey", fill=NA, size=1),
+        axis.title=element_text(size=10),
+        legend.key=element_blank(),
+        legend.position="bottom",
+        legend.background = element_blank(),
+        legend.key.size = unit(.8, "line"),
+        text=element_text(size=10)) +
+  guides(size="none") + xlab("KO Occurrence Frequency") + ylab("KO Read Count Abundance")
+
+peak_info_reads_vs_freq
+```
+
+### Plotting KO Frequency in my ORFs compared to the Database
+
+```{r}
+peak_info_level2_summary$numKOs_database <- table(peak_info_kegg_metabolism$Level2)[names(table(peak_info_kegg_metabolism$Level2)) %in% peak_info_level2_summary$PathwayModule]
+
+peak_info_level2_summary$databaseproportion <- peak_info_level2_summary$numKOs_database/nrow(peak_info_kegg_metabolism[peak_info_kegg_metabolism$Level2 %in% peak_info_level2_summary$PathwayModule,])
+```
+
+```{r}
+ggplot(peak_info_level2_summary, 
+                        aes(x=Proportion_KO, y=databaseproportion)) + 
+  geom_point(aes(colour = PathwayModule, fill = PathwayModule), size=3) +
+  geom_segment(aes(x=0, y=0,
+               xend=0.5, yend=0.5), color="grey") + 
+  theme(panel.background = element_blank(), 
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.title=element_text(size=12),
+        legend.key=element_blank(),
+        legend.position="bottom",
+        legend.background = element_blank(),
+        legend.key.size = unit(.8, "line"),
+        text=element_text(size=11)) +
+  guides(size="none") + xlab("KO Occurrence Frequency Lake Erie Viruses") + ylab("KO Occurrence Frequency Database")
+
+```
+
+# Order the data frame by x in descending order
+
+```{r}
+peak_info_level2_summary_ordered <- peak_info_level2_summary %>%
+  arrange(desc(Proportion_Abund))
+```
+
+```{r}
+peak_info_level2_summary_ordered <- peak_info_level2_summary_ordered[1:7,]
+```
+
+```{r}
+pal <- ggthemes::tableau_color_pal(palette="Classic Green-Orange 12", type="regular")
+```
+
+```{r}
+peak_info_ko_abund <- ggplot(peak_info_level2_summary_ordered, 
+                        aes(x = reorder(PathwayModule, Proportion_Abund), y = Proportion_Abund,
+                            color = PathwayModule, fill = PathwayModule)) + 
+  geom_col() +
+  #geom_text(aes(label = pfam), hjust = -0.05)
+  theme(panel.background = element_blank(), 
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "white", fill=NA, size=1),
+        axis.title=element_text(size=20),
+        axis.ticks=element_blank(),
+        legend.key=element_blank(),
+        legend.position="bottom",
+        legend.background = element_blank(),
+        legend.key.size = unit(2, "line"),
+        text=element_text(size=10)) +
+        #panel.grid.major.x=element_line(color="grey")) +
+  guides(size="none") + xlab("") + ylab("Percent of Genes") +
+  scale_color_manual(name="",
+                     values = alpha(pal(11), 1)) + 
+  scale_fill_manual(name="",
+                     values = alpha(pal(11), 0.3)) +
+  coord_flip()
+
+peak_info_ko_abund
+```

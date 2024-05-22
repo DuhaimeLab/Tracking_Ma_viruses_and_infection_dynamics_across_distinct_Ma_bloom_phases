@@ -1,0 +1,98 @@
+---
+title: "make_orf_tables"
+author: "A.J Wing"
+date: "2023-03-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## import DRAM annotations
+
+```{r}
+annotations <- read_tsv("~/Desktop/erie_story_r_work/merged_annotations.tsv", col_names = T)
+colnames(annotations)[2] <- "Geneid"
+colnames(annotations)[4] <- "UniqContig"
+colnames(annotations)[5] <- "Start"
+colnames(annotations)[7] <- "End"
+annotations <- annotations[,-1]
+annotations <- separate(annotations, col="UniqContig", into=c("Assembly", "Contig"), sep = "--", remove = F)
+
+```
+
+```{r}
+head(annotations)
+```
+
+
+
+## import sample metadata
+
+```{r}
+metadata2 <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata_updated_12_15_21.tsv", col_names = T)
+```
+
+```{r}
+clusters <- read_tsv("~/Desktop/erie_story_r_work/merged_3kb_trimmed_viruses_and_ma_virus_references_95-85_clusters_parsed.tsv", col_names=T)
+names(clusters)[names(clusters) == 'contig'] <- "UniqContig"
+```
+
+```{r}
+vp_orf_annotations <- left_join(clusters,annotations,by="UniqContig")
+dim(vp_orf_annotations)
+```
+
+#filter all orf annotations to only keep columns of interest
+```{r}
+vp_orf_annotations_subset <- vp_orf_annotations[, c("cluster", "Geneid", "Assembly", "Start", "start_position", "End", "strandedness", "rank", "kegg_id", "kegg_hit", "pfam_hits", "vogdb_id", "vogdb_hit")]
+
+names(vp_orf_annotations_subset)[names(vp_orf_annotations_subset) == 'cluster'] <- "VP"
+
+vp_orf_annotations_subset$VP <- gsub("^Cluster", "VP", vp_orf_annotations_subset$VP)
+```
+
+##generate different vp orf tables of interest
+
+##vp_4
+```{r}
+vp_4_orfs <- vp_orf_annotations_subset[vp_orf_annotations$UniqContig == "49614--k141_251347||full", ]
+
+write_tsv(vp_4_orfs, "~/Desktop/erie_story_r_work/vp_4_orfs.tsv")
+```
+
+##vp_1398
+```{r}
+vp_1398_orfs <- vp_orf_annotations_subset[vp_orf_annotations$UniqContig == "53600--k141_277392||full", ]
+
+write_tsv(vp_1398_orfs, "~/Desktop/erie_story_r_work/vp_1398_orfs.tsv")
+```
+
+##vp_4148
+```{r}
+vp_4148_orfs <- vp_orf_annotations_subset[vp_orf_annotations$UniqContig == "49617--k141_212494", ]
+
+write_tsv(vp_4148_orfs, "~/Desktop/erie_story_r_work/vp_4148_orfs.tsv")
+```
+
+##vp_6227
+```{r}
+vp_6227_orfs <- vp_orf_annotations_subset[vp_orf_annotations$UniqContig == "49618--k141_485640||full", ]
+
+write_tsv(vp_6227_orfs, "~/Desktop/erie_story_r_work/vp_6227_orfs.tsv")
+```
+
+##vp_44
+```{r}
+vp_44_orfs <- vp_orf_annotations_subset[vp_orf_annotations$UniqContig == "49615--k141_151162||full", ]
+
+write_tsv(vp_44_orfs, "~/Desktop/erie_story_r_work/vp_44_orfs.tsv")
+```
+
+##vp_596
+```{r}
+vp_596_orfs <- vp_orf_annotations_subset[vp_orf_annotations$UniqContig == "49625--k141_131993||full", ]
+
+write_tsv(vp_596_orfs, "~/Desktop/erie_story_r_work/vp_596_orfs.tsv")
+```

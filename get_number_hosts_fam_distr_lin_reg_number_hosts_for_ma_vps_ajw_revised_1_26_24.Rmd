@@ -1,0 +1,366 @@
+---
+title: "ma_vp_descriptions_for_first_paper_9_22_23"
+author: "A.J Wing"
+date: "2023-09-22"
+output: html_document
+---
+
+##Import VPs and accompanying data
+
+```{r}
+ma_vps_first_paper <- read_tsv("~/Desktop/erie_story_r_work/final_ma_vps_for_paper_1_9_22_23.tsv", col_names=T)
+ma_vps_first_paper <- ma_vps_first_paper[, c("genome", "samples", "cluster", "length", "Date", "Fraction", "family", "rel_ab")]
+```
+
+##august predictions
+```{r}
+august_predictions <- read_tsv("~/Desktop/erie_story_r_work/12_14_22_Aug4_predictions.tsv", col_names=T)
+HABs2014_temp <- separate(august_predictions, col=pairs, c("phage", "host"), sep=":concatenated_", remove = FALSE)
+august_predictions <- HABs2014_temp[, c("phage", "host", "Homology", "Predictions", "GCdiff", "k3dist", "k6dist", "InfProbabilities")]
+august_predictions$phage <- gsub(".fasta", "", august_predictions$phage) 
+august_predictions$phage <- gsub("concatenated_", "", august_predictions$phage)
+august_predictions$host <- gsub(".fasta", "", august_predictions$host)
+head(august_predictions)
+```
+
+
+##september predictions
+```{r}
+september_predictions <- read_tsv("~/Desktop/erie_story_r_work/12_14_22_Sep29_predictions.tsv", col_names=T)
+HABs2014_temp <- separate(september_predictions, col=pairs, c("phage", "host"), sep=":concatenated_", remove = FALSE)
+september_predictions <- HABs2014_temp[, c("phage", "host", "Homology", "Predictions", "GCdiff", "k3dist", "k6dist", "InfProbabilities")]
+september_predictions$phage <- gsub(".fasta", "", september_predictions$phage) 
+september_predictions$phage <- gsub("concatenated_", "", september_predictions$phage)
+september_predictions$host <- gsub(".fasta", "", september_predictions$host)
+head(september_predictions)
+```
+
+##filter to high confidence predictions
+```{r}
+august_093_predictions <- august_predictions[august_predictions$InfProbabilities>=0.93,]
+september_093_predictions <- september_predictions[september_predictions$InfProbabilities>=0.93,]
+```
+
+
+##do this to get number of only ma mags for each phage
+
+```{r}
+#august_093_ma_only_predictions <- subset(august_093_predictions, grepl("contigs", host))
+#september_093_ma_only_predictions <- subset(september_093_predictions, grepl("contigs", host))
+
+august_093_ma_only_predictions <- august_093_predictions
+september_093_ma_only_predictions <- september_093_predictions
+
+```
+
+##get number of hosts per viral population for each bloom peak
+```{r}
+uniq_phage <- unique(august_093_ma_only_predictions$phage)
+number_host <- vector(mode = "integer", length(uniq_phage))
+
+for(i in 1:length(uniq_phage)){
+  cur <- uniq_phage[i]
+  temp <- august_093_ma_only_predictions[which(august_093_ma_only_predictions$phage == cur), ]
+  number_host[i] <- nrow(temp)
+}
+
+aug_number_hosts <- data.frame(uniq_phage, number_host)
+number_host
+
+
+uniq_phage <- unique(september_093_ma_only_predictions$phage)
+number_host <- vector(mode = "integer", length(uniq_phage))
+
+for(i in 1:length(uniq_phage)){
+  cur <- uniq_phage[i]
+  temp <- september_093_ma_only_predictions[which(september_093_ma_only_predictions$phage == cur), ]
+  number_host[i] <- nrow(temp)
+}
+
+september_number_hosts <- data.frame(uniq_phage, number_host)
+number_host
+```
+
+
+
+##for all hosts of ma vps
+
+```{r}
+both_093_predictions <- rbind(august_093_ma_only_predictions,september_093_ma_only_predictions)
+
+both_number_hosts <- rbind(aug_number_hosts,september_number_hosts)
+names(both_number_hosts)[names(both_number_hosts) == "uniq_phage"] <- "phage"
+
+both_093_preds_number_hosts <- merge(both_093_predictions,both_number_hosts, by = "phage")
+
+names(both_093_preds_number_hosts)[names(both_093_preds_number_hosts) == "phage"] <- "genome"
+```
+
+##merge host numbers and ma vp data frame
+```{r}
+both_093_preds_number_hosts_with_stats <- merge(ma_vps_first_paper, both_093_preds_number_hosts, by = "genome", all = FALSE)
+```
+
+##filter out all vps that don't have a rel ab above zero
+```{r}
+both_093_preds_number_hosts_with_rel_ab <- both_093_preds_number_hosts_with_stats[both_093_preds_number_hosts_with_stats$rel_ab > 0,]
+```
+
+##reduce to unique VPs in data frame for plotting
+```{r}
+both_093_preds_unique_for_plotting <- both_093_preds_number_hosts_with_rel_ab[!duplicated(both_093_preds_number_hosts_with_rel_ab$genome), ]
+```
+
+```{r}
+
+both_093_preds_unique_for_plotting$Fraction[is.na(both_093_preds_unique_for_plotting$Fraction)] <- "Whole"
+
+```
+
+
+##merge host numbers and ma vp data frame
+```{r}
+aug_ma_vps_first_paper_with_stats <- merge(ma_vps_first_paper, all_aug_4_number_hosts, by = "genome", all = FALSE)
+```
+
+##filter out all vps that don't have a rel ab above zero
+```{r}
+aug_ma_vps_first_paper_non_zero_rel_ab <- aug_ma_vps_first_paper_with_stats[aug_ma_vps_first_paper_with_stats$rel_ab > 0,]
+```
+
+##add number of dates vp detected in
+```{r}
+aug_ma_vps_first_paper_presence_with_dates <- aug_ma_vps_first_paper_non_zero_rel_ab %>%
+  group_by(cluster) %>%
+  mutate(number_dates = n_distinct(Date))
+```
+
+##reduce to unique VPs in data frame for plotting
+```{r}
+aug_unique_ma_vps_for_plotting <- aug_ma_vps_first_paper_presence_with_dates[!duplicated(aug_ma_vps_first_paper_presence_with_dates$genome), ]
+```
+
+
+```{r}
+
+aug_unique_ma_vps_for_plotting$Fraction[is.na(aug_unique_ma_vps_for_plotting$Fraction)] <- "Whole"
+
+```
+
+```{r}
+ggplot(both_093_preds_unique_for_plotting, aes(x=number_host)) +
+  geom_histogram(binwidth = 1, color = 'white')
+
+ggplot(data=both_093_preds_unique_for_plotting, aes(x=number_host)) +
+    geom_bar(aes(y= (..count..)/sum(..count..)), fill = '#20A387FF') +
+    theme(panel.background = element_blank(),
+          axis.title=element_text(size=20)) +
+    guides(size=FALSE) + xlab("Number of Hosts") + ylab("% of Viruses Infecting Hosts")
+
+number_hosts_plot <- ggplot(data=both_093_preds_unique_for_plotting, aes(x=number_host)) +
+  geom_histogram(aes(y = ..count.. / sum(..count..)), binwidth = 1, color = 'white', fill = '#20A387FF', position = position_dodge(width = 0.7)) +
+  theme(panel.background = element_blank(),
+        strip.background = element_rect(colour= "black", fill = "lemon chiffon", linetype= "solid"),
+        axis.title=element_text(size=20)) +
+  guides(size=FALSE) +
+  xlab("Number of Microcystis Hosts") +
+  ylab("Proportion of Microcystis vOTUs") +
+  scale_x_continuous(breaks = 1:10)
+
+number_hosts_plot
+```
+
+
+
+###plot contig length distribution
+```{r}
+length_distribution <- ggplot(unique_ma_vps_for_plotting, aes(x=length)) +
+  geom_histogram(binwidth = 1000, fill = '#287D8EFF') +
+  facet_grid(. ~ Fraction) +
+  xlim(10000,400000) +
+  #scale_fill_jcolors(palette = "default") +
+  ggtitle("Microcystis virus populations (min. 10kb)") +
+  xlab("Genome Length (binwidth=1000)") +
+  ylab("Number of Populations") +
+  guides(colour = guide_legend(override.aes = list(size=10))) +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        strip.text = element_text(size = 18),
+        strip.background = element_rect(colour= "black", fill = "lemon chiffon", linetype= "solid"),
+        axis.title=element_text(size=18),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=14, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+length_distribution
+
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/first_paper_ma_vp_length_distribution_plot.png", width=1000, height=600)
+length_distribution
+dev.off()
+```
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/first_paper_ma_vp_length_distribution_plot.pdf", width=9, height=6)
+length_distribution
+dev.off()
+```
+
+```{r}
+family_plot <- ggplot(data=unique_ma_vps_for_plotting, aes(x=family, color=family)) +
+    geom_bar(aes(y= (..count..), fill=family)) +
+    facet_grid(. ~ Fraction) +
+  theme(panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=16), 
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, angle=45, vjust=1, hjust=1, colour="black"),
+        plot.margin = unit(c(0.5, 1, 5, 0.6),"lines"),
+        strip.background = element_rect(colour= "black", fill = "lemon chiffon", linetype= "solid"),
+        #legend.position = "bottom", 
+        legend.direction = "horizontal",
+        legend.text = element_text(size=8),
+        legend.position = c(0.2,-1.7)) +
+  guides(fill=guide_legend(nrow=3, byrow=T), color=guide_legend(nrow=3, byrow=T)) +
+  scale_colour_manual(values = c('Ackermannviridae' = 'yellow', 'ambiguous' = 'gray', 'Herelleviridae' = '#482677FF', 'Microviridae' = 'red', 'Myoviridae' = '#55C667FF', 'Podoviridae' = '#287D8EFF', 'Siphoviridae' = '#DCE319FF', 'unknown' = 'gray', 'unassigned' = 'gray' )) +
+  scale_fill_manual(name = '',
+                     values = c('Ackermannviridae' = 'yellow', 'ambiguous' = 'gray', 'Herelleviridae' = '#482677FF', 'Microviridae' = 'red', 'Myoviridae' = '#55C667FF', 'Podoviridae' = '#287D8EFF', 'Siphoviridae' = '#DCE319FF', 'unknown' = 'gray', 'unassigned' = 'gray' )) +
+  xlab("Predicted Microcystis Virus Families") +
+  ylab("Count") 
+
+family_plot
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/first_paper_ma_vp_virus_family_plot_by_fraction.png", width=1000, height=600)
+family_plot
+dev.off()
+```
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/first_paper_ma_vp_virus_family_plot_by_fraction.pdf", width=9, height=6)
+family_plot
+dev.off()
+```
+
+```{r}
+date_plot <- ggplot(data=unique_ma_vps_for_plotting, aes(x=number_dates)) +
+    geom_bar(fill = '#287D8EFF') +
+  facet_grid(. ~ Fraction) +
+    theme(panel.background = element_blank(),
+          strip.background = element_rect(colour= "black", fill = "lemon chiffon", linetype= "solid"),
+          axis.title=element_text(size=20)) +
+    guides(size=FALSE) + xlab("Number of Dates Microcystis Virus Population In") + ylab("Number of Populations") 
+
+date_plot
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/first_paper_ma_vps_number_of_dates_plot_by_fraction.png", width=1000, height=600)
+date_plot
+dev.off()
+```
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/first_paper_ma_vps_number_of_dates_plot_by_fraction.pdf", width=9, height=6)
+date_plot
+dev.off()
+```
+
+###subset to only bloom peak dates
+
+```{r}
+
+subset_df <- subset(
+  both_093_preds_number_hosts_with_stats,
+  Date == '4-Aug-14' | Date == '29-Sep-14'
+)
+
+
+
+```
+
+#now create separate data frames for linear regression analysis
+
+```{r}
+
+
+# Get unique values from the "samples" column
+unique_samples <- unique(subset_df$samples)
+
+# Create separate data frames for each unique sample
+for (sample in unique_samples) {
+  sample_df <- subset_df[subset_df$samples == sample, ]
+  assign(paste0("df_", sample), sample_df)
+}
+
+
+
+```
+
+
+###perform linear regression test
+
+```{r}
+
+# Fit a linear regression model
+lm_model <- lm(rel_ab ~ number_host, data = df_49614)
+
+# Get the summary of the linear regression model
+summary(lm_model)
+```
+
+
+###try running all at same time
+
+```{r}
+# Create an empty data frame to store summary results
+summary_df <- data.frame(Model_Name = character(0), Multiple_R_Squared = numeric(0), F_Statistic = numeric(0), P_Value = numeric(0))
+
+# List of data frame names from 49614 to 49641
+data_frame_names <- c(
+  sprintf("df_%05d", 49614:49635),
+  "df_49640",
+  "df_49641"
+)
+
+# Iterate through data frames and fit linear regression models
+for (df_name in data_frame_names) {
+  # Get the data frame by name
+  current_df <- get(df_name)
+  
+  # Fit a linear regression model
+  lm_model <- lm(rel_ab ~ number_host, data = current_df)
+  
+  # Get the summary of the linear regression model
+  lm_summary <- summary(lm_model)
+  
+  # Extract multiple R-squared, F-statistic, and p-value
+  multiple_r_squared <- lm_summary$r.squared
+  f_statistic <- lm_summary$fstatistic[1]
+  p_value <- pf(f_statistic, lm_summary$fstatistic[2], lm_summary$fstatistic[3], lower.tail = FALSE)
+  
+  # Create a data frame for the current model
+  model_summary <- data.frame(Model_Name = df_name, Multiple_R_Squared = multiple_r_squared, F_Statistic = f_statistic, P_Value = p_value)
+  
+  # Append the results to the summary_df
+  summary_df <- rbind(summary_df, model_summary)
+}
+
+# Now, summary_df contains multiple R-squared, F-statistic, and p-value for each linear regression model in a data frame.
+
+```
+

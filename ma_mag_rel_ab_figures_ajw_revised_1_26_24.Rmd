@@ -1,0 +1,498 @@
+---
+title: "ajw_ma_mag_rel_ab_figures_11_8_23"
+author: "A.J Wing"
+date: "2023-11-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(tidyr)
+library(ggplot2)
+library(tidyverse)
+library(jcolors)
+library(viridis)
+library(cowplot)
+library(gridExtra)
+
+```
+
+```{r}
+metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata_updated_12_15_21.tsv")
+names(metadata)[names(metadata) == 'samples'] <- "sample"
+metadata$sample <- gsub("Sample_","",metadata$sample)
+```
+
+##aug host abundances
+```{r}
+setwd("~/Desktop/erie_story_r_work/aug_ma_mags_coverm_results/")
+```
+
+```{r}
+files = list.files(pattern="*_relative_abundance.tsv",recursive=TRUE)
+
+blast_hits <- function(x) {
+  # Check if file is empty
+  if (file.info(x)$size == 0) {
+    message(paste0("Skipping empty file ", x))
+    return(NULL)
+  } else {
+    tmp <- read.delim(x, header = FALSE, sep = "\t")
+    tmp$sample <- gsub("", "", gsub("_ma_mags_relative_abundance.tsv", "", basename(x)))
+    return(tmp)
+  }
+}
+
+tables <- Filter(NROW, lapply(files, blast_hits))
+coverm_data <- rbindlist(tables)
+```
+
+
+##modify giant blast file to contain meaningful columns
+```{r}
+
+names(coverm_data)[names(coverm_data) == 'V1'] <- "host_genome"
+names(coverm_data)[names(coverm_data) == 'V2'] <- "host_rel_ab"
+names(coverm_data)[names(coverm_data) == 'V3'] <- "host_mean_read_depth"
+names(coverm_data)[names(coverm_data) == 'V4'] <- "host_covered_bases"
+names(coverm_data)[names(coverm_data) == 'V5'] <- "host_variance"
+names(coverm_data)[names(coverm_data) == 'V6'] <- "host_genome_length"
+names(coverm_data)[names(coverm_data) == 'V7'] <- "host_rpkm"
+names(coverm_data)[names(coverm_data) == 'V8'] <- "host_tpm"
+names(coverm_data)[names(coverm_data) == 'V9'] <- "host_sample"
+
+```
+
+```{r}
+coverm_data <- coverm_data[coverm_data$host_genome != 'unmapped',]
+coverm_data <- coverm_data[coverm_data$host_genome != 'Genome',]
+coverm_data$host_genome <- gsub("concatenated_concatenated_","",coverm_data$host_genome)
+
+coverm_data <- subset(coverm_data, grepl("contigs", host_genome))
+```
+
+##merge metadata and coverm data
+```{r}
+coverm_aug_mags <- merge(coverm_data, metadata, by = "sample")
+
+coverm_aug_mags$host_genome <- gsub("_ma_contigs", "", coverm_aug_mags$host_genome)
+
+coverm_aug_mags$host_rel_ab <- as.numeric(coverm_aug_mags$host_rel_ab)
+
+```
+
+
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p1 <- ggplot(coverm_aug_mags, aes(x = host_genome, y = host_rel_ab, fill = Station)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ fraction, nrow = 1, scales = "free") +  # Facet by Station
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the defined palette for coloring Station
+  theme_minimal() +
+  ggtitle("August 4") +  # Add the plot title
+  ylim(0, 40) +  # Set y-axis limits to 0 and 40
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels by 45 degrees
+
+p1
+```
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p2 <- ggplot(coverm_aug_mags, aes(x = host_genome, y = host_rel_ab, fill = "4-Aug-14")) +
+  geom_bar(stat = "identity") +
+  facet_grid(Station ~ fraction, scales = "free") +  # Facet by both Station and fraction
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = "orange") +  # Use the defined palette for coloring host_genome
+  theme_minimal() +
+  ggtitle("August 4") +  # Add the plot title
+  ylim(0, 40) +  # Set y-axis limits to 0 and 40
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p2
+```
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+ggplot(coverm_aug_mags, aes(x = host_genome, y = host_rel_ab, fill = fraction)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ Station, scales = "free") +  # Facet by Station only
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the defined palette for coloring Station
+  theme_minimal() +
+  ggtitle("August 4") +  # Add the plot title
+  ylim(0, 40)  # Set y-axis limits to 0 and 40
+
+```
+
+
+##try box plots instead
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p2 <- ggplot(coverm_aug_mags, aes(x = host_genome, y = host_rel_ab, fill = host_genome)) +
+  geom_boxplot(position = position_dodge(width = 0.75)) +  # Position dodge for box plots
+  geom_point(position = position_dodge(width = 0.75), size = 0.5, aes(color = host_genome)) +  # Position dodge for points
+  #facet_grid(~ fraction, scales = "free") +  # Facet only by fraction (commented out)
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = my_palette) +  # Use the defined palette for coloring boxplots
+  scale_color_manual(values = my_palette) +  # Use the defined palette for coloring points
+  theme_minimal() +
+  ggtitle("August 4") +  # Add the plot title
+  ylim(0, 40) +  # Set y-axis limits to 0 and 40
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p2
+
+
+```
+
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p2 <- ggplot(coverm_aug_mags, aes(x = fraction, y = host_rel_ab)) +
+  geom_boxplot(position = position_dodge(width = 0.75)) +  # Position dodge for box plots
+  geom_point(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75), size = 2, aes(color = host_genome, group = fraction)) +  # Jitter by fraction
+  facet_grid(~ Date, scales = "free") +  # Facet only by fraction (commented out)
+  labs(x = "Fraction (µm)", y = "Relative Abundance") +
+  scale_fill_manual(values = my_palette) +  # Use the defined palette for coloring boxplots
+  scale_color_manual(values = my_palette) +  # Use the defined palette for coloring points
+  theme_minimal() +
+  ggtitle("August 4") +  # Add the plot title
+  ylim(0, 40) +  # Set y-axis limits to 0 and 40
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p2
+
+```
+
+```{r}
+# Define the order of fractions
+fraction_order <- c("Whole", "3", "53", "100")
+
+# Convert the "fraction" variable to a factor with the custom order
+coverm_aug_mags$fraction <- factor(coverm_aug_mags$fraction, levels = fraction_order)
+
+# Define your color palettes
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#FFBF00", "#00A5CF", "#DE1A1A", "#29BF12" )
+
+p2 <- ggplot(coverm_aug_mags, aes(x = fraction, y = host_rel_ab, fill = fraction, color = fraction)) +
+  geom_boxplot(position = position_dodge(width = 0.75)) +
+  geom_point(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75), size = 2) +
+  scale_fill_manual(values = fraction_colors) +  # Use fraction_colors for boxplot fill
+  scale_color_manual(values = fraction_colors) +  # Use fraction_colors for point color
+  facet_grid(~ Date, scales = "free") +
+  labs(x = "Fraction (µm)", y = "Relative Abundance") +
+  theme_minimal() +
+  ggtitle("August 4") +
+  ylim(0, 40) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p2
+
+```
+
+```{r}
+# Define the order of fractions
+fraction_order <- c("Whole", "3", "53", "100")
+
+# Convert the "fraction" variable to a factor with the custom order
+coverm_aug_mags$fraction <- factor(coverm_aug_mags$fraction, levels = fraction_order)
+
+# Define your color palettes
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#FFBF00", "#00A5CF", "#DE1A1A", "#29BF12" )
+
+p2 <- ggplot(coverm_aug_mags, aes(x = fraction, y = host_rel_ab, fill = fraction, color = fraction)) +
+  geom_boxplot(position = position_dodge(width = 0.75), color = "black") +  # Set boxplot outline color to black
+  geom_point(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75), size = 2) +
+  scale_fill_manual(values = fraction_colors) +
+  scale_color_manual(values = fraction_colors) +
+  facet_grid(~ Date, scales = "free") +
+  labs(x = "Fraction (µm)", y = "Relative Abundance") +
+  theme_minimal() +
+  ggtitle("August 4") +
+  ylim(0, 40) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p2
+
+```
+
+```{r}
+# Define the order of fractions
+fraction_order <- c("Whole", "3", "53", "100")
+
+# Convert the "fraction" variable to a factor with the custom order
+coverm_aug_mags$fraction <- factor(coverm_aug_mags$fraction, levels = fraction_order)
+
+# Define your color palettes
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#FFBF00", "#00A5CF", "#DE1A1A", "#29BF12" )
+
+p2 <- ggplot(coverm_aug_mags, aes(x = fraction, y = host_rel_ab, fill = fraction)) +
+  geom_boxplot(position = position_dodge(width = 0.75), color = "black") +
+  geom_point(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75), size = 2, color = "black") +  # Set point color to black
+  scale_fill_manual(values = fraction_colors) +
+  scale_color_manual(values = "black") +  # Set point color to black
+  facet_grid(~ Date, scales = "free", labeller = labeller(.rows = label_both)) +  # Remove facet titles
+  labs(x = "Fraction (µm)", y = "Relative Abundance (%)") +
+  theme_minimal() +
+  ggtitle("August 4") +
+  ylim(0, 40) +
+  theme(axis.text.x = element_text(size = 12)) +
+  theme(axis.text.y = element_text(size = 12)) +
+  theme(legend.position = "none")  # Hide the legend
+
+p2
+
+```
+
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p2 <- ggplot(coverm_aug_mags, aes(x = host_genome, y = host_rel_ab, fill = fraction)) +
+  geom_boxplot(position = position_dodge(width = 0.75)) +  # Position dodge for box plots
+  geom_point(position = position_dodge(width = 0.75), size = 0.5, aes(color = fraction)) +  # Position dodge for points
+  #facet_grid(~ fraction, scales = "free") +  # Facet only by fraction (commented out)
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the defined palette for coloring boxplots
+  scale_color_manual(values = fraction_colors) +  # Use the defined palette for coloring points
+  theme_minimal() +
+  ggtitle("August 4") +  # Add the plot title
+  ylim(0, 40) +  # Set y-axis limits to 0 and 40
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p2
+
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/paper_one_aug_mags_rel_ab_box_plots_11_10_23.png", width=800, height=800)
+p2
+dev.off()
+```
+#Store NMDS as PDF
+```{r}
+pdf("~/Desktop/erie_story_r_work/paper_one_aug_mags_rel_ab_box_plots_11_10_23.pdf", width=8, height=8)
+p2
+dev.off()
+```
+
+
+###now the same for the september bloom peak
+
+##sep host abundances
+```{r}
+setwd("~/Desktop/erie_story_r_work/sep_ma_mags_coverm_results/")
+```
+
+```{r}
+files = list.files(pattern="*_relative_abundance.tsv",recursive=TRUE)
+
+blast_hits <- function(x) {
+  # Check if file is empty
+  if (file.info(x)$size == 0) {
+    message(paste0("Skipping empty file ", x))
+    return(NULL)
+  } else {
+    tmp <- read.delim(x, header = FALSE, sep = "\t")
+    tmp$sample <- gsub("", "", gsub("_ma_mags_relative_abundance.tsv", "", basename(x)))
+    return(tmp)
+  }
+}
+
+tables <- Filter(NROW, lapply(files, blast_hits))
+coverm_data <- rbindlist(tables)
+```
+
+
+##modify giant blast file to contain meaningful columns
+```{r}
+
+names(coverm_data)[names(coverm_data) == 'V1'] <- "host_genome"
+names(coverm_data)[names(coverm_data) == 'V2'] <- "host_rel_ab"
+names(coverm_data)[names(coverm_data) == 'V3'] <- "host_mean_read_depth"
+names(coverm_data)[names(coverm_data) == 'V4'] <- "host_covered_bases"
+names(coverm_data)[names(coverm_data) == 'V5'] <- "host_variance"
+names(coverm_data)[names(coverm_data) == 'V6'] <- "host_genome_length"
+names(coverm_data)[names(coverm_data) == 'V7'] <- "host_rpkm"
+names(coverm_data)[names(coverm_data) == 'V8'] <- "host_tpm"
+names(coverm_data)[names(coverm_data) == 'V9'] <- "host_sample"
+
+```
+
+```{r}
+coverm_data <- coverm_data[coverm_data$host_genome != 'unmapped',]
+coverm_data <- coverm_data[coverm_data$host_genome != 'Genome',]
+coverm_data$host_genome <- gsub("concatenated_concatenated_","",coverm_data$host_genome)
+
+coverm_data <- subset(coverm_data, grepl("contigs", host_genome))
+```
+
+##merge metadata and coverm data
+```{r}
+coverm_sep_mags <- merge(coverm_data, metadata, by = "sample")
+
+coverm_sep_mags$host_genome <- gsub("_ma_contigs", "", coverm_sep_mags$host_genome)
+
+coverm_sep_mags$host_rel_ab <- as.numeric(coverm_sep_mags$host_rel_ab)
+
+```
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p1 <- ggplot(coverm_sep_mags, aes(x = host_genome, y = host_rel_ab, fill = Station)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ fraction, nrow = 1, scales = "free") +  # Facet by Station
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the defined palette for coloring Station
+  theme_minimal() +
+  ggtitle("September 29") +  # Add the plot title
+  ylim(0, 40) +  # Set y-axis limits to 0 and 40
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels by 45 degrees
+
+p1
+```
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p2 <- ggplot(coverm_sep_mags, aes(x = host_genome, y = host_rel_ab, fill = "29-Sep-14")) +
+  geom_bar(stat = "identity") +
+  facet_grid(Station ~ fraction, scales = "free") +  # Facet by both Station and fraction
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = "#377EB8") +  # Use the defined palette for coloring host_genome
+  theme_minimal() +
+  ggtitle("September 29") +  # Add the plot title
+  ylim(0, 40) +  # Set y-axis limits to 0 and 40
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p2
+```
+
+
+###NOW VISUALIZE TOGETHER
+
+```{r}
+# Assuming coverm_aug_mags and coverm_sep_mags have the same columns
+combined_data <- rbind(coverm_aug_mags, coverm_sep_mags)
+
+```
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+ggplot(combined_data, aes(x = host_genome, y = host_rel_ab, fill = fraction)) +
+  geom_bar(stat = "identity") +
+  facet_grid(Station ~ fraction, scales = "free") +  # Facet by both Station and fraction
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the defined palette for coloring Station
+  theme_minimal() +
+  ggtitle("September 29") +  # Add the plot title
+  ylim(0, 40)  # Set y-axis limits to 0 and 40
+```
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+ggplot(combined_data, aes(x = host_genome, y = host_rel_ab, fill = fraction)) +
+  geom_bar(stat = "identity") +
+  facet_grid(Station ~ Date, scales = "free") +  # Facet by both Station and fraction
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the defined palette for coloring host_genome
+  theme_minimal() +
+  ggtitle("Both Peaks") +  # Add the plot title
+  ylim(0, 40)  # Set y-axis limits to 0 and 40
+
+```
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+ggplot(combined_data, aes(x = host_genome, y = host_rel_ab, fill = Date)) +
+  geom_bar(stat = "identity") +
+  facet_grid(Station ~ fraction, scales = "free") +  # Facet by Station only
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = my_palette) +  # Use the defined palette for coloring Station
+  theme_minimal() +
+  ggtitle("Both Peaks") +  # Add the plot title
+  ylim(0, 40) +  # Set y-axis limits to 0 and 40
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels by 45 degrees
+
+```
+
+```{r}
+# Define the order of fractions
+fraction_order <- c("Whole", "3", "53", "100")
+
+# Convert the "fraction" variable to a factor with the custom order
+coverm_sep_mags$fraction <- factor(coverm_sep_mags$fraction, levels = fraction_order)
+
+# Define your color palettes
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#FFBF00", "#00A5CF", "#DE1A1A", "#29BF12" )
+
+p2 <- ggplot(coverm_sep_mags, aes(x = fraction, y = host_rel_ab, fill = fraction)) +
+  geom_boxplot(position = position_dodge(width = 0.75), color = "black") +
+  geom_point(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75), size = 2, color = "black") +  # Set point color to black
+  scale_fill_manual(values = fraction_colors) +
+  scale_color_manual(values = "black") +  # Set point color to black
+  facet_grid(~ Date, scales = "free", labeller = labeller(.rows = label_both)) +  # Remove facet titles
+  labs(x = "Fraction (µm)", y = "Relative Abundance (%)") +
+  theme_minimal() +
+  ggtitle("September 29") +
+  ylim(0, 40) +
+  theme(axis.text.x = element_text(size = 12)) +
+  theme(axis.text.y = element_text(size = 12)) +
+  theme(legend.position = "none")  # Hide the legend
+
+p2
+
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/paper_one_sep_mags_rel_ab_box_plots_11_10_23.png", width=800, height=800)
+p2
+dev.off()
+```
+#Store NMDS as PDF
+```{r}
+pdf("~/Desktop/erie_story_r_work/paper_one_sep_mags_rel_ab_box_plots_11_10_23.pdf", width=8, height=8)
+p2
+dev.off()
+```

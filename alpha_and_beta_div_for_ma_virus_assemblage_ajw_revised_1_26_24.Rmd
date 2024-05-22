@@ -1,0 +1,867 @@
+---
+title: "beta_diversity_peak_microcystis_viruses_1_27_23"
+author: "A.J Wing"
+date: "2023-01-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load necessary packages
+```{r}
+library(tidyr)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(dendextend)
+library(gridExtra)
+library(vegan)
+library(ape)
+library(RColorBrewer)
+library(jcolors)
+library(showtext)
+```
+
+#add specific color palette
+```{r}
+bloom_peak_date_colors <- c("#404788FF","#1F968BFF")
+```
+
+# Import commmon files
+
+## import metadata
+```{r}
+metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata_updated_9_25_23.tsv")
+names(metadata)[names(metadata) == 'samples'] <- "sample"
+metadata$sample <- gsub("Sample_","",metadata$sample)
+```
+
+## import tpm normalized read counts
+```{r}
+viral_tpm_normalized_counts <- read_tsv("~/Desktop/erie_story_r_work/viral_contigs_tpm_normalized_counts.tsv")
+names(viral_tpm_normalized_counts)[names(viral_tpm_normalized_counts) == 'contig'] <- "phage"
+
+```
+
+
+## import viral predictions for each bloom
+
+
+#august bloom predictions without viral binning
+```{r}
+# load data
+HABs2014 <- read_tsv("~/Desktop/erie_story_r_work/Aug4_predictions.tsv")
+HABs2014_temp <- separate(HABs2014, col=pairs, c("phage", "host"), sep=":concatenated_", remove = FALSE)
+HABs2014_aug_bloom <- HABs2014_temp[, c("phage", "host", "Homology", "Predictions", "GCdiff", "k3dist", "k6dist", "InfProbabilities")]
+HABs2014_aug_bloom$phage <- gsub(".fasta", "", HABs2014_aug_bloom$phage) 
+HABs2014_aug_bloom <-HABs2014_aug_bloom[!(HABs2014_aug_bloom$host=="Sample_49613_42.fasta"),]
+HABs2014_aug_bloom <-HABs2014_aug_bloom[!(HABs2014_aug_bloom$host=="Sample_49613_9.fasta"),]
+```
+
+
+
+#now modify this to include the sample number for each phage
+```{r}
+
+HABs2014_aug_bloom$phage_copy <- HABs2014_aug_bloom$phage
+HABs2014_aug_bloom$phage_copy <- gsub("concatenated_", "", HABs2014_aug_bloom$phage_copy)
+HABs2014_aug_bloom$phage_copy <- gsub("\\-.*", "", HABs2014_aug_bloom$phage_copy)
+HABs2014_aug_bloom$phage_copy <- gsub("\\_.*", "", HABs2014_aug_bloom$phage_copy)
+HABs2014_aug_bloom$phage_copy <- gsub("september", "49628", HABs2014_aug_bloom$phage_copy)
+names(HABs2014_aug_bloom)[names(HABs2014_aug_bloom) == 'phage_copy'] <- "sample"
+HABs2014_aug_bloom$phage <- gsub(".fasta", "", HABs2014_aug_bloom$phage)
+HABs2014_aug_bloom$host <- gsub(".fasta", "", HABs2014_aug_bloom$host)
+```
+
+#now import viral sequence lengths so we can keep only those >10kb
+```{r}
+aug_viral_seq_lengths <- read_tsv("~/Desktop/erie_story_r_work/all_2014_virus_lengths.tsv")
+names(aug_viral_seq_lengths)[names(aug_viral_seq_lengths) == 'bin'] <- "phage"
+```
+
+
+#and join the imported lengths with the predictions
+```{r}
+HABs2014_aug_bloom <- left_join(HABs2014_aug_bloom,aug_viral_seq_lengths,by="phage")
+dim(HABs2014_aug_bloom)
+```
+
+#and filter by 10kb
+```{r}
+HABs2014_aug_bloom_10kb <- HABs2014_aug_bloom[HABs2014_aug_bloom$length>=0,]
+```
+
+#apply threshold to reduce datasize and boost confidence in predictions
+```{r}
+thresh <- 0.93
+
+HABs2014_aug_bloom_w_thresh <- HABs2014_aug_bloom_10kb[which(HABs2014_aug_bloom_10kb$InfProbabilities > thresh), ]
+print(dim(HABs2014_aug_bloom_w_thresh))
+```
+
+#filter phages to only predicted microcystis phages
+```{r}
+aug4_093_microcystis_phages <- subset(HABs2014_aug_bloom_w_thresh, grepl("contigs", HABs2014_aug_bloom_w_thresh$host))
+```
+
+
+#now lets filter the phages again so we get microcystis hosts and non-microcystis hosts
+```{r}
+aug4_093_ma_phages_all_hosts <- subset(HABs2014_aug_bloom_w_thresh, phage %in% aug4_093_microcystis_phages$phage)
+```
+
+#now lets add tpm counts to predicted microcystis phages
+```{r}
+microcystis_virus_norm_tpm_counts_aug4 <- left_join(aug4_093_microcystis_phages,viral_tpm_normalized_counts,by="phage")
+
+```
+
+```{r}
+write_tsv(microcystis_virus_norm_tpm_counts_aug4, file="~/Desktop/erie_story_r_work/10kb_93_thresh_aug4_predictions.tsv")
+```
+
+
+
+
+#september bloom
+```{r}
+# load data
+HABs2014 <- read_tsv("~/Desktop/erie_story_r_work/Sep29_predictions.tsv")
+HABs2014_temp <- separate(HABs2014, col=pairs, c("phage", "host"), sep=":concatenated_", remove = FALSE)
+HABs2014_sep_bloom <- HABs2014_temp[, c("phage", "host", "Homology", "Predictions", "GCdiff", "k3dist", "k6dist", "InfProbabilities")]
+HABs2014_sep_bloom$phage <- gsub(".fasta", "", HABs2014_sep_bloom$phage) 
+#HABs2014_sep_bloom$phage <- gsub("concatenated_", "", HABs2014$phage)
+head(HABs2014_sep_bloom)
+```
+
+#now modify to separate predictions by each samples phages
+```{r}
+
+HABs2014_sep_bloom$phage_copy <- HABs2014_sep_bloom$phage
+HABs2014_sep_bloom$phage_copy <- gsub("concatenated_", "", HABs2014_sep_bloom$phage_copy)
+HABs2014_sep_bloom$phage_copy <- gsub("\\-.*", "", HABs2014_sep_bloom$phage_copy)
+HABs2014_sep_bloom$phage_copy <- gsub("\\_.*", "", HABs2014_sep_bloom$phage_copy)
+HABs2014_sep_bloom$phage_copy <- gsub("september", "49628", HABs2014_sep_bloom$phage_copy)
+names(HABs2014_sep_bloom)[names(HABs2014_sep_bloom) == 'phage_copy'] <- "sample"
+HABs2014_sep_bloom$phage <- gsub(".fasta", "", HABs2014_sep_bloom$phage)
+HABs2014_sep_bloom$host <- gsub(".fasta", "", HABs2014_sep_bloom$host)
+```
+
+#now import viral sequence lengths so we can keep only those >10kb
+```{r}
+sep_viral_seq_lengths <- read_tsv("~/Desktop/erie_story_r_work/all_2014_virus_lengths.tsv")
+names(sep_viral_seq_lengths)[names(sep_viral_seq_lengths) == 'bin'] <- "phage"
+```
+
+
+#and join the imported lengths with the predictions
+```{r}
+HABs2014_sep_bloom <- left_join(HABs2014_sep_bloom,sep_viral_seq_lengths,by="phage")
+dim(HABs2014_sep_bloom)
+```
+
+#and filter by 10kb
+```{r}
+HABs2014_sep_bloom_10kb <- HABs2014_sep_bloom[HABs2014_sep_bloom$length>=0,]
+```
+
+#now apply threshold to reduce network size while increasing confidence in predictions
+```{r}
+thresh <- 0.93
+
+HABs2014_sep_bloom_w_thresh <- HABs2014_sep_bloom_10kb[which(HABs2014_sep_bloom_10kb$InfProbabilities > thresh), ]
+print(dim(HABs2014_sep_bloom_w_thresh))
+```
+
+
+#filter phages to only predicted microcystis phages
+```{r}
+sep29_093_microcystis_phages <- subset(HABs2014_sep_bloom_w_thresh, grepl("contigs", HABs2014_sep_bloom_w_thresh$host))
+```
+
+#now lets filter the phages again so we get microcystis hosts and non-microcystis hosts
+```{r}
+sep29_093_ma_phages_all_hosts <- subset(HABs2014_sep_bloom_w_thresh, phage %in% sep29_093_microcystis_phages$phage)
+```
+
+#now lets add tpm counts to predicted microcystis phages
+```{r}
+microcystis_virus_norm_tpm_counts_sep29 <- left_join(sep29_093_microcystis_phages,viral_tpm_normalized_counts,by="phage")
+dim(microcystis_virus_norm_tpm_counts_sep29)
+```
+
+##now bind aug4 and sep29 ma virus tpm norm'd counts
+```{r}
+both_peaks_ma_virus_tpm_norm_counts <- rbind(microcystis_virus_norm_tpm_counts_aug4,microcystis_virus_norm_tpm_counts_sep29)
+dim(both_peaks_ma_virus_tpm_norm_counts)
+```
+
+```{r}
+write_tsv(both_peaks_ma_virus_tpm_norm_counts, "~/Desktop/erie_story_r_work/both_peaks_ma_virus_tpm_norm_counts.tsv")
+```
+
+
+```{r}
+unique_both_peaks_ma_virus_tpm_norm_counts <- both_peaks_ma_virus_tpm_norm_counts[!duplicated(both_peaks_ma_virus_tpm_norm_counts$phage), ]
+unique_both_peaks_ma_virus_tpm_norm_counts <-unique_both_peaks_ma_virus_tpm_norm_counts[!(unique_both_peaks_ma_virus_tpm_norm_counts$phage=="september_ma_lem01_variant"),]
+names(unique_both_peaks_ma_virus_tpm_norm_counts)[names(unique_both_peaks_ma_virus_tpm_norm_counts) == 'phage'] <- "contig"
+```
+
+```{r}
+write_tsv(unique_both_peaks_ma_virus_tpm_norm_counts, "~/Desktop/erie_story_r_work/unique_both_peaks_ma_virus_tpm_norm_counts.tsv")
+```
+
+
+
+```{r}
+clusters <- read_tsv("~/Desktop/erie_story_r_work/merged_3kb_trimmed_viruses_and_ma_virus_references_95-85_clusters_parsed.tsv", col_names=T)
+```
+
+
+
+
+
+
+## collapse clusters
+```{r}
+tpm_collapsed <- unique_both_peaks_ma_virus_tpm_norm_counts %>%
+  inner_join(clusters, by=c("contig", "Length"="length")) %>%
+  group_by(cluster, samples) %>%
+  dplyr::summarize(
+    total_mapped_reads=sum(ReadCounts),
+    average_contig_length=mean(Length),
+    total_contig_legnth=sum(Length),
+    total_tpm=sum(TPM)
+  )
+```
+
+```{r}
+tpm_wide <- tpm_collapsed %>% pivot_wider(id_cols=cluster, 
+                                                       names_from=samples, 
+                                                       values_from=total_tpm,
+                                                       values_fill=0)
+```
+
+## format for beta diversity
+```{r}
+abund_table <- t(tpm_wide[,-1])
+colnames(abund_table) <- tpm_wide$cluster
+samples <- rownames(abund_table)
+abund_table <- as_tibble(abund_table)
+abund_table$samples <- samples
+```
+
+```{r}
+metadata_uniq <- metadata[!duplicated(metadata$sample),]
+names(metadata_uniq)[names(metadata_uniq) == 'sample'] <- "samples"
+```
+
+
+## Bind metadata and abund_table
+```{r}
+merged <- left_join(abund_table, metadata_uniq, by = c("samples"))
+merged <- merged[,-c(3713)]
+```
+
+
+## create metadata for diversity analyses--removed rows and columns with multiple NAs
+```{r}
+metadata_for_beta <- merged[,c((ncol(merged)-26):ncol(merged))]
+
+```
+
+##create abund table for diversity analysis
+
+```{r}
+abund_table <- merged[-c((ncol(merged)-26):ncol(merged))]
+```
+
+##rename columns to be agreeable for plotting
+```{r}
+
+names(metadata_for_beta)[names(metadata_for_beta) == 'AquaFluor-PC'] <- "AquaFluor_PC"
+names(metadata_for_beta)[names(metadata_for_beta) == 'AquaFluor-CHL'] <- "AquaFluor_CHL"
+names(metadata_for_beta)[names(metadata_for_beta) == '10AU-CHL'] <- "TenAU_CHL"
+
+```
+
+
+## Use Bray Curtis to calculate distance between samples
+
+
+```{r}
+nmds_res <- vegan::metaMDS(abund_table, distance="bray", try=100)
+
+```
+
+
+##Perform envfit on continuous variables
+
+```{r}
+ef <- vegan::envfit(nmds_res, metadata_for_beta[,c(5:26)], permu=999, na.rm=T)
+ef
+
+```
+
+
+
+#order dates
+```{r}
+
+metadata_for_beta$ordered_dates = factor(metadata_for_beta$Date, levels=c("4-Aug-14","29-Sep-14"))
+
+
+```
+
+##prep for plotting
+
+```{r}
+
+###add custom merriweather font
+font_add_google("Merriweather", "merriweather")
+showtext_auto()
+
+###add color palette
+
+c11 <- c("dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", "gold1", "#FB9A99", "palegreen2", "deeppink1", "blue1", "green1")
+
+```
+
+
+
+#Plot NMDS with environmental params by station and fraction
+```{r}
+
+ss <- as.data.frame(nmds_res$points)
+
+ss$sample <- rownames(ss)
+ss$Station <- metadata_for_beta$Station
+ss$Fraction <- metadata_for_beta$fraction
+ss$Date <- metadata_for_beta$Date
+
+pal <- ggthemes::tableau_color_pal(palette="Tableau 20", type="regular")
+
+p1 <- ggplot(ss, aes(x=MDS1,y=MDS2)) + 
+  geom_point(aes( shape = Date, colour = Fraction, fill = Fraction), alpha=0.5, size=8) +
+    geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[9,1], yend=scores(ef, "vectors")[9,2],
+                 ), colour="black", arrow=arrow(length = unit(0.03,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[9,1], y=scores(ef, "vectors")[9,2]),
+                label=names(ef$vectors$r)[9], nudge_y=0.05, nudge_x=0.05, size=3,
+            check_overlap = T) +
+      geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[19,1], yend=scores(ef, "vectors")[19,2],
+                 ), colour="black", arrow=arrow(length = unit(0.03,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[19,1], y=scores(ef, "vectors")[19,2]),
+                label=names(ef$vectors$r)[19], nudge_y=0.05, nudge_x=0.05, size=3,
+            check_overlap = T) +
+      geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[22,1], yend=scores(ef, "vectors")[22,2],
+                 ), colour="black", arrow=arrow(length = unit(0.03,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[22,1], y=scores(ef, "vectors")[22,2]),
+                label=names(ef$vectors$r)[22], nudge_y=0.05, nudge_x=0.05, size=3,
+            check_overlap = T) +
+  scale_colour_jcolors(palette = "default") +
+   theme(panel.background = element_blank(),
+        #text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        #axis.text=element_blank(),
+        #axis.ticks=element_blank(),
+        #axis.title=element_text(size=16),
+        plot.title = element_text(size = 20, hjust = 0.5, colour = "black"),
+        legend.key=element_blank(),
+        legend.position="bottom",
+        legend.background = element_blank(),
+        legend.key.size = unit(.8, "line"),
+        legend.text=element_text(size=9),
+        legend.title = element_blank()) +
+  #ggtitle("Lake Erie Viral Community NMDS Plot--Bray Curtis Dissimilarities") +
+  guides(size=FALSE) + xlab("NMDS 1") + ylab("NMDS 2") +
+  #scale_shape_manual(name="",
+  #                   values = c(13,4,2,10,5,8,0,6,3,12,14,1)) + 
+ # scale_color_manual(name="",
+ #                    values = alpha(pal(length(unique(ss$study))), 1)) + 
+ # scale_fill_manual(name="",
+ #                    values = alpha(pal(length(unique(ss$study))), 0.3)) + 
+  scale_shape_manual(name="",
+                     values = c(21,22)) +
+  coord_equal()
+
+p1
+
+```
+
+#test chunk
+```{r}
+ss <- as.data.frame(nmds_res$points)
+
+ss$sample <- rownames(ss)
+ss$Station <- metadata_for_beta$Station
+ss$Fraction <- metadata_for_beta$fraction
+ss$Date <- metadata_for_beta$Date
+
+pal <- ggthemes::tableau_color_pal(palette="Tableau 20", type="regular")
+
+p1 <- ggplot(ss, aes(x=MDS1,y=MDS2)) + 
+  geom_point(aes( shape = Date, colour = Fraction, fill = Fraction), alpha=0.8, size=8) +
+  geom_segment(aes(x=0, y=0,
+                   xend=scores(ef, "vectors")[8,1], yend=scores(ef, "vectors")[8,2],
+                   ), colour="black", arrow=arrow(length = unit(0.03,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[8,1], y=scores(ef, "vectors")[8,2]),
+                label=names(ef$vectors$r)[8], nudge_x=-0.1, nudge_y=0, size=3,
+            check_overlap = T) +
+  scale_colour_jcolors(palette = "default") +
+   theme(panel.background = element_blank(),
+        text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        #axis.text=element_blank(),
+        #axis.ticks=element_blank(),
+        #axis.title=element_text(size=16),
+        plot.title = element_text(size = 20, hjust = 0.5, colour = "black"),
+        legend.key=element_blank(),
+        legend.position="bottom",
+        legend.background = element_blank(),
+        legend.key.size = unit(.8, "line"),
+        legend.text=element_text(size=9),
+        legend.title = element_blank()) +
+  #ggtitle("Lake Erie Viral Community NMDS Plot--Bray Curtis Dissimilarities") +
+  guides(size=FALSE) + xlab("NMDS 1") + ylab("NMDS 2") +
+  #scale_shape_manual(name="",
+  #                   values = c(13,4,2,10,5,8,0,6,3,12,14,1)) + 
+ # scale_color_manual(name="",
+ #                    values = alpha(pal(length(unique(ss$study))), 1)) + 
+ # scale_fill_manual(name="",
+ #                    values = alpha(pal(length(unique(ss$study))), 0.3)) + 
+  coord_equal()
+
+p1
+```
+
+#Store NMDS as PDF
+```{r}
+pdf("~/Desktop/erie_story_r_work/le_ma_virus_peak_communities.pdf", width=8, height=8)
+p1
+dev.off()
+```
+
+
+
+#Plot NMDS with environmental params by station and fraction--color by date
+```{r}
+
+ss <- as.data.frame(nmds_res$points)
+
+ss$sample <- rownames(ss)
+ss$Station <- metadata_for_beta$Station
+ss$Fraction <- metadata_for_beta$fraction
+ss$Date <- metadata_for_beta$Date
+
+pal <- ggthemes::tableau_color_pal(palette="Tableau 20", type="regular")
+
+p1 <- ggplot(ss, aes(x=MDS1,y=MDS2)) + 
+  geom_point(aes( shape = Fraction, colour = Date, fill = Date), alpha=0.8, size=8) +
+    geom_segment(aes(x=0, y=0,
+                 xend=scores(ef, "vectors")[8,1], yend=scores(ef, "vectors")[8,2],
+                 ), colour="black", arrow=arrow(length = unit(0.03,"npc"))) +
+  geom_text(aes(x=scores(ef, "vectors")[8,1], y=scores(ef, "vectors")[8,2]),
+                label=names(ef$vectors$r)[8], nudge_y=0.05, nudge_x=0.05, size=3,
+            check_overlap = T) +
+  scale_color_manual(values = bloom_peak_date_colors) +
+  scale_fill_manual(values = bloom_peak_date_colors) +
+   theme(panel.background = element_blank(),
+        #text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        #axis.text=element_blank(),
+        #axis.ticks=element_blank(),
+        #axis.title=element_text(size=16),
+        plot.title = element_text(size = 20, hjust = 0.5, colour = "black"),
+        legend.key=element_blank(),
+        legend.position="bottom",
+        legend.background = element_blank(),
+        legend.key.size = unit(.8, "line"),
+        legend.text=element_text(size=9),
+        legend.title = element_blank()) +
+  #ggtitle("Lake Erie Viral Community NMDS Plot--Bray Curtis Dissimilarities") +
+  guides(size=FALSE) + xlab("NMDS 1") + ylab("NMDS 2") +
+  scale_shape_manual(name="",
+                     values = c(21,22,23,24,25)) +
+  coord_equal()
+
+p1
+
+```
+
+
+
+#Store NMDS ordination as PNG
+```{r}
+png("~/Desktop/erie_story_r_work/le_viral_comm_beta_div_with_continuous_params_by_fraction.png", width=800, height=800)
+p1
+dev.off()
+```
+#Store NMDS as PDF
+```{r}
+pdf("~/Desktop/erie_story_r_work/le_ma_viral_comm_color_by_date.pdf", width=8, height=8)
+p1
+dev.off()
+```
+
+
+```{r}
+dist_abund <- vegan::vegdist(abund_table, method="bray")
+```
+
+#Perform adonis on nmds  samples
+```{r}
+adonis <- vegan::adonis(dist_abund ~ size_association+Date, data=metadata_for_beta, 
+                 permutations = 9999)
+adonis
+
+
+
+```
+
+```{r}
+adonis <- vegan::adonis(dist_abund ~ Par+pH+CHLa+SRP+PC+Particulate_Microcystin+Nitrate+Ammonia+TP+TDP+Temp+Cond+DO, data=metadata_for_beta, 
+                 permutations = 9999)
+adonis
+
+
+
+```
+
+# Richness and Evenness
+
+##create list to filter to only ma phages for evenness
+
+```{r}
+ma_phage_list <- rbind(aug4_093_microcystis_phages, sep29_093_microcystis_phages)
+
+ma_phage_list <- ma_phage_list[, 1, drop = FALSE]
+
+ma_phage_list <- unique(ma_phage_list)
+
+names(ma_phage_list)[names(ma_phage_list) == 'phage'] <- "contig"
+```
+
+
+
+```{r}
+read_counts_wide <- read_tsv("~/Desktop/erie_story_r_work/merged_trimmed_viruses_only_downsampled_1000000_wide.txt", col_names = T)
+downsampled_counts <- read_counts_wide[,-ncol(read_counts_wide)]
+#downsampled_counts <- downsampled_counts[!grepl("co-", downsampled_counts$contig),]
+```
+
+##filter to only ma phages now
+```{r}
+# Filter df1 by matching contigs in df2
+downsampled_counts <- downsampled_counts %>%
+  semi_join(ma_phage_list, by = "contig")
+```
+
+## Processing 
+
+### Transpose the matrix to have samples as rows
+
+```{r}
+abund_table<-t(downsampled_counts[,-1])
+```
+
+Turn the abund_table matrix into a tibble.
+```{r}
+rn <- rownames(abund_table)
+abund_table <- as_tibble(abund_table)
+abund_table$samples <- rn
+```
+
+#match metadata with abundance table column
+```{r}
+names(metadata)[names(metadata) == 'sample'] <- "samples"
+```
+
+```{r}
+merged <- left_join(metadata, abund_table, by = c("samples"))
+#merged$samples[is.na(merged$samples)] <- 1
+
+#merged$total_reads <- as.numeric(merged$total_reads)
+```
+
+```{r}
+abund_table_reads <- merged[,-c(1:28,ncol(abund_table))]
+#abund_table_reads <- abund_table_reads[,colSums(abund_table_reads)>11]
+#last row is all NAs
+#abund_table_reads <- abund_table_reads[-nrow(abund_table_reads),]
+#abund_table <- abund_table[-nrow(abund_table),]
+```
+
+### Calculate alpha diversity
+Calculate the Shannon and Simpson diversities (take into account evenness, as
+well as the number of taxa), as well as the number of taxa (viral populations).
+```{r}
+alpha_wide <- merged[,1:28]
+alpha_wide$shannon <- vegan::diversity(abund_table_reads, index = "shannon", MARGIN = 1)
+alpha_wide$simpson <- vegan::diversity(abund_table_reads, MARGIN = 1, index = "simpson")
+alpha_wide$observed <- vegan::specnumber(abund_table_reads, MARGIN = 1)
+```
+
+```{r}
+mean(alpha_wide$shannon)
+sd(alpha_wide$shannon)
+
+mean(alpha_wide$observed)
+sd(alpha_wide$observed)
+```
+
+```{r}
+
+diversity <- diversity(abund_table_reads, index = "shannon")
+
+# Calculate species richness (number of species)
+species_richness <- specnumber(abund_table_reads)
+
+# Calculate Shannon's Evenness
+evenness <- diversity / log(species_richness)
+
+alpha_wide$evenness <- evenness
+# Print the calculated Shannon's Evenness
+print(evenness)
+
+```
+
+### customizing plot items
+
+```{r}
+
+###add custom merriweather font
+font_add_google("Merriweather", "merriweather")
+showtext_auto()
+
+###add colorblind friendly pallette
+
+cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+```
+
+
+
+
+
+### visualizing the alpha diversity differences by sample
+```{r}
+
+alpha_wide$Date <- factor(alpha_wide$Date, levels=c("8-Jul-14", "21-Jul-14", "29-Jul-14", "4-Aug-14", "25-Aug-14", "8-Sep-14", "23-Sep-14", "29-Sep-14", "6-Oct-14", "20-Oct-14", "27-Oct-14" ))
+
+
+##station over time shannon
+
+plot_stations_shannon <- ggplot(alpha_wide, aes(x=Date, y=shannon, color=fraction)) +
+  geom_point(alpha = 0.5, size = 6) +
+    ylim(c(3, 8)) +
+  geom_hline(yintercept = 6.315, linetype = 'dashed', color = "red" ) +
+  guides(col =guide_legend("Fraction (µm)"), override.aes=list(size=20)) +
+  scale_colour_jcolors(palette = "default") +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  ggtitle("Lake Erie Microcystis Viral Community Shannon Diversity") +
+  xlab("Date") +
+  ylab("Shannon Diversity") +
+  theme(panel.background = element_blank(),
+        text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=18),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+plot_stations_shannon + facet_wrap(vars(Station)) +
+theme(strip.text = element_text(face = "bold", hjust = 0.5, size = 12),
+        strip.background = element_rect(colour = "black", fill = "lemonchiffon", linetype = "solid"))
+
+
+
+##all stations observed richness
+
+plot_stations_observed <- ggplot(alpha_wide, aes(x=Date, y=observed, color=fraction)) +
+  geom_point(alpha = 0.5, size = 6) +
+  ylim(c(0, 3000)) +
+  geom_hline(yintercept = 1355, linetype = 'dashed', color = "red" ) +
+  guides(col =guide_legend("Fraction (µm)"), override.aes=list(size=20)) +
+  scale_colour_jcolors(palette = "default") +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  ggtitle("Lake Erie Microcystis Viral Community Observed Richness") +
+  xlab("Date") +
+  ylab("Observed Richness") +
+  theme(panel.background = element_blank(),
+        text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=18),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")  
+
+plot_stations_observed + facet_wrap(vars(Station)) +
+theme(strip.text = element_text(face = "bold", hjust = 0.5, size = 16),
+        strip.background = element_rect(colour = "black", fill = "lemonchiffon", linetype = "solid"))
+
+
+
+plot_stations_evenness <- ggplot(alpha_wide, aes(x=Date, y=evenness, color=fraction)) +
+  geom_point(alpha = 0.5, size = 6) +
+  ylim(c(0.5, 1)) +
+  #geom_hline(yintercept = 7800, linetype = 'dashed', color = "red" ) +
+  guides(col =guide_legend("Fraction (µm)"), override.aes=list(size=20)) +
+  scale_colour_jcolors(palette = "default") +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  #ggtitle("Lake Erie Viral Community Observed Richness") +
+  xlab("Date") +
+  ylab("Observed Richness") +
+  theme(panel.background = element_blank(),
+        text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=18),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        #plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")  
+
+plot_stations_evenness <- plot_stations_evenness + facet_grid(cols = vars(Station)) +
+theme(strip.text = element_text(face = "bold", hjust = 0.5, size = 16),
+        strip.background = element_rect(colour = "black", fill = "lemonchiffon", linetype = "solid"))
+
+
+
+plot_stations_evenness
+
+```
+
+```{r}
+# Specify the desired order of the fraction variable
+alpha_wide$fraction <- factor(alpha_wide$fraction, levels = c("Viral", "Whole", "3", "53", "100"))
+
+# Increase the height of the plot
+options(repr.plot.height = 15)  # Adjust the height as per your requirement
+
+plot_stations_evenness <- ggplot(alpha_wide, aes(x = fraction, y = evenness, fill = fraction)) +
+  geom_boxplot(width = 0.8) +
+  geom_jitter(width = 0.2, alpha = 0.5, size = 2) + 
+  ylim(c(0.7, 1)) +
+  guides(fill = guide_legend("Fraction (µm)"), override.aes = list(size = 20)) +
+  scale_fill_jcolors(palette = "default") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("Fraction (µm)") +
+  ylab("Shannon's Evenness") +
+  theme(panel.background = element_blank(),
+        text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title = element_text(size = 18),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black"),
+        plot.margin = margin(t = 1, r = 1, b = 3, l = 2, unit = "cm"))
+
+plot_stations_evenness
+
+
+
+
+```
+
+
+```{r}
+# Specify the desired order of the fraction variable
+alpha_wide$fraction <- factor(alpha_wide$fraction, levels = c("Viral", "Whole", "3", "53", "100"))
+
+# Increase the height of the plot
+options(repr.plot.height = 15)  # Adjust the height as per your requirement
+
+plot_stations_observed <- ggplot(alpha_wide, aes(x = fraction, y = observed, fill = fraction)) +
+  geom_boxplot(width = 0.8) +
+  ylim(c(0, 3000)) +
+  guides(fill = guide_legend("Fraction (µm)"), override.aes = list(size = 20)) +
+  scale_fill_jcolors(palette = "default") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("Fraction (µm)") +
+  ylab("Observed Richness") +
+  theme(panel.background = element_blank(),
+        text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title = element_text(size = 18),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black"),
+        plot.margin = margin(t = 1, r = 1, b = 3, l = 2, unit = "cm"))
+
+plot_stations_observed
+
+
+
+
+```
+
+
+```{r}
+# Specify the desired order of the fraction variable
+alpha_wide$fraction <- factor(alpha_wide$fraction, levels = c("Viral", "Whole", "3", "53", "100"))
+
+plot_stations_shannon <- ggplot(alpha_wide, aes(x = fraction, y = shannon, fill = fraction)) +
+  geom_boxplot(width = 0.8) +
+  ylim(c(5, 8)) +
+  guides(fill = guide_legend("Fraction (µm)"), override.aes = list(size = 20)) +
+  scale_fill_jcolors(palette = "default") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("Fraction (µm)") +
+  ylab("Shannon Diversity") +
+  theme(panel.background = element_blank(),
+        text = element_text(family = "merriweather"),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 1),
+        axis.title = element_text(size = 18),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x = element_text(size = 12, colour = "black"),
+        plot.margin = margin(t = 1, r = 1, b = 3, l = 2, unit = "cm"))
+
+plot_stations_shannon
+
+# Adjust the breaks and labels on the y-axis
+plot_stations_shannon +
+  scale_y_continuous(limits = c(5, 8), breaks = seq(5, 8, by = 0.5))
+
+
+```

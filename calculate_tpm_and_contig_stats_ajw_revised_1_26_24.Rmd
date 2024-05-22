@@ -1,0 +1,908 @@
+---
+title: "Erie Taxa Counts Processing"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+this notebook takes the viral counts from samtools (or any other program) and 
+does the processing to prepare them for use in taxonomic analyses
+
+# Import Libraries
+
+```{r}
+library(tidyr)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(vegan)
+library(gridExtra)
+library(jcolors)
+library(scales)
+```
+
+# With all Reads
+
+# Import and processing
+## Import 
+
+## import metadata
+```{r}
+metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata_updated_8_9_22.tsv", col_names = T)
+```
+
+```{r}
+metadata$samples <- sub("Sample_", "", metadata$samples)
+
+metadata$samples <- as.character( metadata$samples)
+
+
+```
+
+## Import viral read counts and coverage info
+only counting reads that mapped as part of a pair
+
+
+merged_viral_contigs_count.txt is the output of FeatureCounts (you need the sample, contig, length, and read counts)
+```{r}
+read_coverage <- read_tsv("~/Desktop/erie_story_r_work/merged_viral_contigs_count.txt", col_names = T)
+colnames(read_coverage)[ncol(read_coverage)] <- "ReadCounts"
+read_coverage$ComboId <- sub("FeatureCounts/", "", read_coverage$ComboId)
+read_coverage$ComboId <- sub("_viral_contigs_count.txt", "", read_coverage$ComboId)
+read_coverage <- separate(read_coverage, col="Geneid", into=c("contig", "fragment"), sep="\\|\\|viral_frag_", remove=F)
+read_coverage <- separate(read_coverage, col="ComboId", into=c("Assembly", "sample"), sep="--", remove=F)
+```
+
+```{r}
+head(read_coverage)
+```
+
+# make wide
+```{r}
+read_coverage_wide <- read_coverage %>%
+  pivot_wider(id_cols=c(Geneid, Length), 
+    names_from=Assembly, 
+    values_from=ReadCounts,
+    values_fill=0)
+```
+
+### calculate TPM
+essentially the same as RPKM, but easier to compare between samples of different sequencing depths: 
+https://www.rna-seqblog.com/rpkm-fpkm-and-tpm-clearly-explained/
+
+TPM = transcripts per kilobase million
+TPM = (num reads / (geneLength/1000)) / (total RPK for sample / 1000000) 
+```{r}
+read_counts_norm <- read_coverage_wide[,-c(1,2)]
+read_counts_norm <- read_counts_norm/(read_coverage_wide$Length/1000)
+sample_counts <- tibble(sample=colnames(read_counts_norm),
+                        viral_read_counts=colSums(read_counts_norm))
+read_counts_norm <- t(read_counts_norm)
+read_counts_norm <- read_counts_norm/(sample_counts$viral_read_counts/1000000)
+read_counts_norm <- t(read_counts_norm)
+
+read_counts_norm <- as_tibble(read_counts_norm)
+read_counts_norm$Geneid <- read_coverage_wide$Geneid
+```
+
+```{r}
+read_coverage_metadata <- inner_join(metadata, sample_counts, by = c("samples" = "sample"))
+
+plot_samples_observed <- ggplot(read_coverage_metadata, aes(x=fraction, y=viral_read_counts, fill=fraction)) +
+  geom_boxplot(alpha=0.8) +
+  #geom_jitter() +
+  scale_fill_jcolors(palette = "default") +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  ggtitle("Lake Erie Viral Community Observed Richness") +
+  xlab("Samples") +
+  ylab("Observed Richness") +
+  theme(panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=16),
+        plot.title = element_text(size = 20, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+  
+plot_samples_observed
+```
+
+#Store NMDS ordination as PNG
+```{r}
+png("~/Desktop/erie_story_r_work/viral_observed_richness_by_fraction.png", width=800, height=800)
+plot_samples_observed
+dev.off()
+```
+#Store NMDS as PDF
+```{r}
+pdf("~/Desktop/erie_story_r_work/viral_observed_richness_by_fraction.pdf", width=8, height=8)
+plot_samples_observed
+dev.off()
+```
+
+
+```{r}
+head(read_counts_norm)
+table(is.na(read_counts_norm))
+table(is.numeric(sample_counts$viral_read_counts))
+read_counts_norm[,8]
+```
+
+turn from wide back into long dataframe, remove contigs with zero reads
+```{r}
+tpm_long <- read_counts_norm  %>% 
+  pivot_longer(!Geneid, names_to="samples", values_to="TPM") %>% 
+  filter(TPM!=0) %>% 
+  filter(TPM!="NaN") %>%
+  inner_join(read_coverage, by=c("Geneid", c("samples"="Assembly") ))
+```
+
+
+#write tpm_long to tsv
+
+```{r}
+write_tsv(tpm_long, "~/Desktop/erie_story_r_work/viral_contigs_tpm_normalized_counts.tsv")
+```
+
+```{r}
+head(tpm_long)
+```
+
+<this is the output from the parse_clusters script I shared
+```{r}
+clusters <- read_tsv("~/Desktop/erie_story_r_work/merged_3kb_trimmed_viruses_and_ma_virus_references_95-85_clusters_parsed.tsv", col_names=T)
+```
+
+```{r}
+head(clusters)
+```
+
+## collapse clusters
+```{r}
+tpm_collapsed <- tpm_long %>%
+  inner_join(clusters, by=c("contig", "Length"="length")) %>%
+  group_by(cluster, samples) %>%
+  dplyr::summarize(
+    total_mapped_reads=sum(ReadCounts),
+    average_contig_length=mean(Length),
+    total_contig_legnth=sum(Length),
+    total_tpm=sum(TPM)
+  )
+```
+
+```{r}
+write_tsv(tpm_collapsed, "~/Desktop/erie_story_r_work/tpm_collapsed.tsv")
+```
+
+```{r}
+head(tpm_collapsed)
+```
+
+## Getting number of contigs per assembly (this is just to have, not necessary for beta diversity)
+```{r}
+contig_counts <- tibble(samples = names(table(tpm_collapsed$samples)),
+                        Cluster_count = table(tpm_collapsed$samples))
+
+contig_counts <- contig_counts %>%
+  inner_join(metadata, by=c("samples")) %>%
+  filter(!duplicated(samples)) %>%
+  group_by(samples) %>%
+  dplyr::summarize(
+    average_contig_count=mean(Cluster_count)
+  )
+
+
+```
+
+```{r}
+contig_counts
+```
+
+# Using a TPM threshold
+```{r}
+table(tpm_collapsed$total_tpm>1)
+```
+
+```{r}
+tpm_collapsed_keep <- tpm_collapsed[tpm_collapsed$total_tpm>1,]
+```
+
+```{r}
+head(tpm_collapsed_keep)
+```
+```{r}
+write_tsv(as_tibble(tpm_collapsed), "tpm_collapsed_vp_counts.tsv_3_23_23.tsv")
+```
+
+### Make wide
+
+```{r}
+tpm_wide <- tpm_collapsed_keep %>% pivot_wider(id_cols=cluster, 
+                                                       names_from=samples, 
+                                                       values_from=total_tpm,
+                                                       values_fill=0)
+```
+
+
+
+```{r}
+write_tsv(as_tibble(tpm_wide), "tpm_wide_contig_clusters.txt")
+```
+
+## format for beta diversity
+```{r}
+abund_table <- t(tpm_wide[,-1])
+colnames(abund_table) <- tpm_wide$cluster
+samples <- rownames(abund_table)
+abund_table <- as_tibble(abund_table)
+abund_table$samples <- samples
+```
+
+```{r}
+metadata_uniq <- metadata[!duplicated(metadata$samples),]
+```
+
+
+## Bind metadata and abund_table
+```{r}
+merged <- left_join(abund_table, metadata_uniq, by = c("samples"))
+```
+
+```{r}
+write_tsv(merged, "~/Desktop/erie_story_r_work/abund_table_tpm_normalized_clusters_with_metadata.tsv")
+```
+
+```{r}
+abund_table[1:30,1:30]
+```
+##focus on those that clustered with known ma viruses based on protein clustering via vcontact2
+```{r}
+merged_tpm <- read_tsv("~/Desktop/erie_story_r_work/abund_table_tpm_normalized_clusters_with_metadata.tsv")
+
+abund_table <- merged_tpm[,-c((ncol(merged_tpm)-25):ncol(merged_tpm))]
+
+abund_table_rel <-abund_table/rowSums(abund_table)*100
+hist(log10(colSums(abund_table_rel)))
+table(colSums(abund_table_rel)>1)
+
+#write_tsv(abund_table_rel, "~/Desktop/erie_story_r_work/tpm_normalized_vps_relative_abundance.tsv")
+
+abund_table_rel_subset <- abund_table_rel %>%
+  select("Cluster_4","Cluster_13442","Cluster_8664", "Cluster_4148", "Cluster_4859", "Cluster_6110",    "Cluster_6227", "Cluster_470", "Cluster_213", "Cluster_1398")
+
+ 
+```
+
+
+
+
+
+#prep abund table to plot vps in same protein cluster as known ma viruses
+
+```{r}
+
+rownames(abund_table_rel_subset) <- colnames(tpm_wide[,-1])
+
+abund_table_rel_subset$sample <- NULL
+
+abund_table_rel_subset <- tibble::rownames_to_column(abund_table_rel_subset, "samples")
+
+
+colnames(abund_table_rel_subset)[2] <- "VP_4"
+colnames(abund_table_rel_subset)[3] <- "VP_13442"
+colnames(abund_table_rel_subset)[4] <- "VP_8664"
+colnames(abund_table_rel_subset)[5] <- "VP_4148"
+colnames(abund_table_rel_subset)[6] <- "VP_4859"
+colnames(abund_table_rel_subset)[7] <- "VP_6110"
+colnames(abund_table_rel_subset)[8] <- "VP_6227"
+colnames(abund_table_rel_subset)[9] <- "VP_470"
+colnames(abund_table_rel_subset)[10] <- "VP_213"
+colnames(abund_table_rel_subset)[11] <- "VP_1398"
+
+print(abund_table_rel_subset)
+
+
+```
+
+##melt data for plotting
+```{r}
+
+abund_table_rel_subset <- abund_table_rel_subset %>%
+  pivot_longer(!samples, names_to = "VP", values_to = "count")
+```
+
+##add metadata
+```{r}
+abund_table_rel_subset_with_metadata <- left_join(abund_table_rel_subset, metadata_uniq, by = c("samples"))
+```
+
+```{r}
+abund_table_rel_subset_with_metadata$ordered_dates = factor(abund_table_rel_subset_with_metadata$Date, levels=c("8-Jul-14","21-Jul-14","29-Jul-14","4-Aug-14","25-Aug-14","8-Sep-14","23-Sep-14","29-Sep-14","6-Oct-14","20-Oct-14","27-Oct-14"))
+```
+
+```{r}
+abund_table_rel_subset_with_metadata_cleaned <- abund_table_rel_subset_with_metadata[abund_table_rel_subset_with_metadata$count !=0,]
+```
+
+##get SE for environmental params
+```{r}
+vp_count_mean <- abund_table_rel_subset_with_metadata_cleaned %>%
+  dplyr::group_by(Date) %>%
+  dplyr::summarise(mean_count = mean(count)
+                   , sd_count = sd(count))
+
+```
+
+#add calculated values to original station metadata
+```{r}
+abund_table_rel_subset_with_metadata_cleaned <- left_join(abund_table_rel_subset_with_metadata_cleaned,vp_count_mean,by="Date")
+dim(abund_table_rel_subset_with_metadata_cleaned)
+```
+
+```{r}
+rel_ab_subset_plot <- ggplot(abund_table_rel_subset_with_metadata_cleaned, aes(x=ordered_dates, y=count, group=VP, color=VP)) +
+  geom_point(aes(color = VP), alpha=0.6, size=6) +
+#  geom_line(aes(color = mean_count.x),position=position_dodge(width=0.2), size=1.5) +
+#    geom_errorbar(aes(ymin = mean_count.x - sd_count.x
+#                      , ymax = mean_count.x + sd_count.x)
+#                , position=position_dodge(width=0.4), size=0.4) +
+  scale_color_manual(values = c('#20DE8B', '#CCDE8B', '#FFDE8B', '#FFA88B', '#FF6A8B', '#FF6AD5', '#C874AA', '#AD8CFF', '#966BFF', '#90CFFF')) +
+  ggtitle("Lake Erie Microcystis Viral Populations") +
+  xlab("Sampling Date") +
+  ylab("TPM Relative Abundance (%)") +
+  guides(colour = guide_legend(override.aes = list(size=6))) +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=14),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        plot.title = element_text(size = 16, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+rel_ab_subset_plot
+#rel_ab_subset_plot + facet_wrap(vars(fraction))
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/VP_2014_relative_abundance_protein_cluster_w_ma_viruses_2_15_23.png", width=1000, height=600)
+rel_ab_subset_plot
+dev.off()
+```
+
+
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/VP_2014_relative_abundance_protein_cluster_w_ma_viruses_2_15_23.pdf", width=9, height=6)
+rel_ab_subset_plot
+dev.off()
+```
+
+
+
+
+
+##now focus on those vps predicted to infect microcystis that also have spacer hits to hosts and are >5kb
+```{r}
+merged_tpm <- read_tsv("~/Desktop/erie_story_r_work/abund_table_tpm_normalized_clusters_with_metadata.tsv")
+
+abund_table <- merged_tpm[,-c((ncol(merged_tpm)-25):ncol(merged_tpm))]
+
+abund_table_rel <-abund_table/rowSums(abund_table)*100
+hist(log10(colSums(abund_table_rel)))
+table(colSums(abund_table_rel)>1)
+
+#write_tsv(abund_table_rel, "~/Desktop/erie_story_r_work/tpm_normalized_vps_relative_abundance.tsv")
+
+abund_table_rel_subset_2 <- abund_table_rel %>%
+  select("Cluster_1180","Cluster_1336","Cluster_1434", "Cluster_1736", "Cluster_2187", "Cluster_308", "Cluster_4", "Cluster_4148", "Cluster_6227", "Cluster_698")
+
+ 
+```
+
+#prep abund table to plot vps in same protein cluster as known ma viruses
+
+```{r}
+
+rownames(abund_table_rel_subset_2) <- colnames(tpm_wide[,-1])
+
+abund_table_rel_subset_2$sample <- NULL
+
+abund_table_rel_subset_2 <- tibble::rownames_to_column(abund_table_rel_subset_2, "samples")
+
+
+colnames(abund_table_rel_subset_2)[2] <- "VP_1180"
+colnames(abund_table_rel_subset_2)[3] <- "VP_1336"
+colnames(abund_table_rel_subset_2)[4] <- "VP_1434"
+colnames(abund_table_rel_subset_2)[5] <- "VP_1736"
+colnames(abund_table_rel_subset_2)[6] <- "VP_2187"
+colnames(abund_table_rel_subset_2)[7] <- "VP_308"
+colnames(abund_table_rel_subset_2)[8] <- "VP_4"
+colnames(abund_table_rel_subset_2)[9] <- "VP_4148"
+colnames(abund_table_rel_subset_2)[10] <- "VP_6227"
+colnames(abund_table_rel_subset_2)[11] <- "VP_698"
+
+print(abund_table_rel_subset_2)
+
+
+```
+
+##melt data for plotting
+```{r}
+
+abund_table_rel_subset_2 <- abund_table_rel_subset_2 %>%
+  pivot_longer(!samples, names_to = "VP", values_to = "count")
+```
+
+##add metadata
+```{r}
+abund_table_rel_subset_2_with_metadata <- left_join(abund_table_rel_subset_2, metadata_uniq, by = c("samples"))
+```
+
+```{r}
+abund_table_rel_subset_2_with_metadata$ordered_dates = factor(abund_table_rel_subset_2_with_metadata$Date, levels=c("8-Jul-14","21-Jul-14","29-Jul-14","4-Aug-14","25-Aug-14","8-Sep-14","23-Sep-14","29-Sep-14","6-Oct-14","20-Oct-14","27-Oct-14"))
+```
+
+```{r}
+abund_table_rel_subset_2_with_metadata_cleaned <- abund_table_rel_subset_2_with_metadata[abund_table_rel_subset_2_with_metadata$count !=0,]
+```
+
+##get SE for environmental params
+```{r}
+vp_count_mean <- abund_table_rel_subset_2_with_metadata_cleaned %>%
+  dplyr::group_by(Date) %>%
+  dplyr::summarise(mean_count = mean(count)
+                   , sd_count = sd(count))
+
+```
+
+#add calculated values to original station metadata
+```{r}
+abund_table_rel_subset_2_with_metadata_cleaned <- left_join(abund_table_rel_subset_2_with_metadata_cleaned,vp_count_mean,by="Date")
+dim(abund_table_rel_subset_2_with_metadata_cleaned)
+```
+
+```{r}
+rel_ab_subset_plot_2 <- ggplot(abund_table_rel_subset_2_with_metadata_cleaned, aes(x=ordered_dates, y=count, group=VP, color=VP)) +
+  geom_point(aes(color = VP), alpha=0.6, size=6) +
+#  geom_line(aes(color = mean_count.x),position=position_dodge(width=0.2), size=1.5) +
+#    geom_errorbar(aes(ymin = mean_count.x - sd_count.x
+#                      , ymax = mean_count.x + sd_count.x)
+#                , position=position_dodge(width=0.4), size=0.4) +
+  scale_color_manual(values = c('#20DE8B', '#CCDE8B', '#FFDE8B', '#FFA88B', '#FF6A8B', '#FF6AD5', '#C874AA', '#AD8CFF', '#966BFF', '#90CFFF')) +
+  ggtitle("LE Microcystis Viral Populations w/ Spacer Hits") +
+  xlab("Sampling Date") +
+  ylab("TPM Relative Abundance (%)") +
+  guides(colour = guide_legend(override.aes = list(size=6))) +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=14),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        plot.title = element_text(size = 16, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+rel_ab_subset_plot_2
+#rel_ab_subset_plot + facet_wrap(vars(fraction))
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/VP_2014_relative_abundance_ma_viruses_w_spacer_hits_2_15_23.png", width=1000, height=600)
+rel_ab_subset_plot_2
+dev.off()
+```
+
+
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/VP_2014_relative_abundance_ma_viruses_w_spacer_hits_2_15_23.pdf", width=9, height=6)
+rel_ab_subset_plot_2
+dev.off()
+```
+
+##now focus on those vps predicted to infect microcystis with no spacer hits and present in the most dates
+```{r}
+merged_tpm <- read_tsv("~/Desktop/erie_story_r_work/abund_table_tpm_normalized_clusters_with_metadata.tsv")
+
+abund_table <- merged_tpm[,-c((ncol(merged_tpm)-25):ncol(merged_tpm))]
+
+abund_table_rel <-abund_table/rowSums(abund_table)*100
+hist(log10(colSums(abund_table_rel)))
+table(colSums(abund_table_rel)>1)
+
+#write_tsv(abund_table_rel, "~/Desktop/erie_story_r_work/tpm_normalized_vps_relative_abundance.tsv")
+
+abund_table_rel_subset_3 <- abund_table_rel %>%
+  select("Cluster_596","Cluster_44","Cluster_1802", "Cluster_2382", "Cluster_554", "Cluster_12", "Cluster_241", "Cluster_667", "Cluster_658", "Cluster_60")
+
+ 
+```
+
+#prep abund table to plot vps in same protein cluster as known ma viruses
+
+```{r}
+
+rownames(abund_table_rel_subset_3) <- colnames(tpm_wide[,-1])
+
+abund_table_rel_subset_3$sample <- NULL
+
+abund_table_rel_subset_3 <- tibble::rownames_to_column(abund_table_rel_subset_3, "samples")
+
+
+colnames(abund_table_rel_subset_3)[2] <- "VP_596"
+colnames(abund_table_rel_subset_3)[3] <- "VP_44"
+colnames(abund_table_rel_subset_3)[4] <- "VP_1802"
+colnames(abund_table_rel_subset_3)[5] <- "VP_2382"
+colnames(abund_table_rel_subset_3)[6] <- "VP_554"
+colnames(abund_table_rel_subset_3)[7] <- "VP_12"
+colnames(abund_table_rel_subset_3)[8] <- "VP_241"
+colnames(abund_table_rel_subset_3)[9] <- "VP_667"
+colnames(abund_table_rel_subset_3)[10] <- "VP_658"
+colnames(abund_table_rel_subset_3)[11] <- "VP_60"
+
+print(abund_table_rel_subset_3)
+
+
+```
+
+##melt data for plotting
+```{r}
+
+abund_table_rel_subset_3 <- abund_table_rel_subset_3 %>%
+  pivot_longer(!samples, names_to = "VP", values_to = "count")
+```
+
+##add metadata
+```{r}
+abund_table_rel_subset_3_with_metadata <- left_join(abund_table_rel_subset_3, metadata_uniq, by = c("samples"))
+```
+
+```{r}
+abund_table_rel_subset_3_with_metadata$ordered_dates = factor(abund_table_rel_subset_3_with_metadata$Date, levels=c("8-Jul-14","21-Jul-14","29-Jul-14","4-Aug-14","25-Aug-14","8-Sep-14","23-Sep-14","29-Sep-14","6-Oct-14","20-Oct-14","27-Oct-14"))
+```
+
+```{r}
+abund_table_rel_subset_3_with_metadata_cleaned <- abund_table_rel_subset_3_with_metadata[abund_table_rel_subset_3_with_metadata$count !=0,]
+```
+
+##get SE for environmental params
+```{r}
+vp_count_mean <- abund_table_rel_subset_3_with_metadata_cleaned %>%
+  dplyr::group_by(Date) %>%
+  dplyr::summarise(mean_count = mean(count)
+                   , sd_count = sd(count))
+
+```
+
+#add calculated values to original station metadata
+```{r}
+abund_table_rel_subset_3_with_metadata_cleaned <- left_join(abund_table_rel_subset_3_with_metadata_cleaned,vp_count_mean,by="Date")
+dim(abund_table_rel_subset_3_with_metadata_cleaned)
+```
+
+```{r}
+rel_ab_subset_plot_3 <- ggplot(abund_table_rel_subset_3_with_metadata_cleaned, aes(x=ordered_dates, y=count, group=VP, color=VP)) +
+ geom_point(aes(color = VP), alpha=0.8, size=6) +
+ geom_line(aes(color = VP, group = VP), size=0.75) +
+#    geom_errorbar(aes(ymin = mean_count.x - sd_count.x
+#                      , ymax = mean_count.x + sd_count.x)
+#                , position=position_dodge(width=0.4), size=0.4) +
+  scale_color_manual(values = c('#20DE8B', '#CCDE8B', '#FFDE8B', '#FFA88B', '#FF6A8B', '#FF6AD5', '#C874AA', '#AD8CFF', '#966BFF', '#90CFFF')) +
+  ggtitle("LE Microcystis Viral Populations predicted in most dates") +
+  xlab("Sampling Date") +
+  ylab("TPM Relative Abundance (%)") +
+  guides(colour = guide_legend(override.aes = list(size=6))) +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=14),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        plot.title = element_text(size = 16, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+rel_ab_subset_plot_3
+faceted_plot_3 <- rel_ab_subset_plot_3 + facet_wrap(vars(Station))
+faceted_plot_3
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/station_faceted_VP_ra_predicted_ma_viruses_most_dates_8_16_23.png", width=1000, height=600)
+faceted_plot_3
+dev.off()
+```
+
+
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/station_faceted_VP_ra_predicted_ma_viruses_most_dates_8_16_23.pdf", width=9, height=6)
+faceted_plot_3
+dev.off()
+```
+
+##now focus on those vps predicted to infect microcystis with no spacer hits with the highest tpm values
+```{r}
+merged_tpm <- read_tsv("~/Desktop/erie_story_r_work/abund_table_tpm_normalized_clusters_with_metadata.tsv")
+
+abund_table <- merged_tpm[,-c((ncol(merged_tpm)-25):ncol(merged_tpm))]
+
+abund_table_rel <-abund_table/rowSums(abund_table)*100
+hist(log10(colSums(abund_table_rel)))
+table(colSums(abund_table_rel)>1)
+
+#write_tsv(abund_table_rel, "~/Desktop/erie_story_r_work/tpm_normalized_vps_relative_abundance.tsv")
+
+abund_table_rel_subset_4 <- abund_table_rel %>%
+  select("Cluster_1180","Cluster_1112","Cluster_1434", "Cluster_596", "Cluster_698", "Cluster_399", "Cluster_2414", "Cluster_1592", "Cluster_2685", "Cluster_2863")
+
+ 
+```
+
+#prep abund table to plot vps in same protein cluster as known ma viruses
+
+```{r}
+
+rownames(abund_table_rel_subset_4) <- colnames(tpm_wide[,-1])
+
+abund_table_rel_subset_4$sample <- NULL
+
+abund_table_rel_subset_4 <- tibble::rownames_to_column(abund_table_rel_subset_4, "samples")
+
+
+colnames(abund_table_rel_subset_4)[2] <- "VP_1180"
+colnames(abund_table_rel_subset_4)[3] <- "VP_1112"
+colnames(abund_table_rel_subset_4)[4] <- "VP_1434"
+colnames(abund_table_rel_subset_4)[5] <- "VP_596"
+colnames(abund_table_rel_subset_4)[6] <- "VP_698"
+colnames(abund_table_rel_subset_4)[7] <- "VP_399"
+colnames(abund_table_rel_subset_4)[8] <- "VP_2414"
+colnames(abund_table_rel_subset_4)[9] <- "VP_1592"
+colnames(abund_table_rel_subset_4)[10] <- "VP_2685"
+colnames(abund_table_rel_subset_4)[11] <- "VP_2863"
+
+print(abund_table_rel_subset_4)
+
+
+```
+
+##melt data for plotting
+```{r}
+
+abund_table_rel_subset_4 <- abund_table_rel_subset_4 %>%
+  pivot_longer(!samples, names_to = "VP", values_to = "count")
+```
+
+##add metadata
+```{r}
+abund_table_rel_subset_4_with_metadata <- left_join(abund_table_rel_subset_4, metadata_uniq, by = c("samples"))
+```
+
+```{r}
+abund_table_rel_subset_4_with_metadata$ordered_dates = factor(abund_table_rel_subset_4_with_metadata$Date, levels=c("8-Jul-14","21-Jul-14","29-Jul-14","4-Aug-14","25-Aug-14","8-Sep-14","23-Sep-14","29-Sep-14","6-Oct-14","20-Oct-14","27-Oct-14"))
+```
+
+```{r}
+abund_table_rel_subset_4_with_metadata_cleaned <- abund_table_rel_subset_4_with_metadata[abund_table_rel_subset_4_with_metadata$count !=0,]
+```
+
+##get SE for environmental params
+```{r}
+vp_count_mean <- abund_table_rel_subset_4_with_metadata_cleaned %>%
+  dplyr::group_by(Date) %>%
+  dplyr::summarise(mean_count = mean(count)
+                   , sd_count = sd(count))
+
+```
+
+#add calculated values to original station metadata
+```{r}
+abund_table_rel_subset_4_with_metadata_cleaned <- left_join(abund_table_rel_subset_4_with_metadata_cleaned,vp_count_mean,by="Date")
+dim(abund_table_rel_subset_4_with_metadata_cleaned)
+```
+
+```{r}
+rel_ab_subset_plot_4 <- ggplot(abund_table_rel_subset_4_with_metadata_cleaned, aes(x=ordered_dates, y=count, group=VP, color=VP)) +
+  geom_point(aes(color = VP), alpha=0.8, size=6) +
+  geom_line(aes(color = VP, group = VP), size=0.75) +
+#    geom_errorbar(aes(ymin = mean_count.x - sd_count.x
+#                      , ymax = mean_count.x + sd_count.x)
+#                , position=position_dodge(width=0.4), size=0.4) +
+  scale_color_manual(values = c('#20DE8B', '#CCDE8B', '#FFDE8B', '#FFA88B', '#FF6A8B', '#FF6AD5','#966BFF', '#AD8CFF', '#C874AA', '#90CFFF')) +
+  ggtitle("LE Microcystis Viral Populations Highest TPM Counts") +
+  xlab("Sampling Date") +
+  ylab("TPM Relative Abundance (%)") +
+  guides(colour = guide_legend(override.aes = list(size=6))) +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=14),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        plot.title = element_text(size = 16, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.text.x  = element_text(size=12, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+rel_ab_subset_plot_4
+faceted_plot_4 <- rel_ab_subset_plot_4 + facet_wrap(vars(Station))
+faceted_plot_4
+```
+
+```{r}
+png("~/Desktop/erie_story_r_work/station_faceted_VP_ra_predicted_ma_viruses_highest_TPM_8_16_23.png", width=1000, height=600)
+faceted_plot_4
+dev.off()
+```
+
+
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/station_faceted_VP_ra_predicted_ma_viruses_highest_TPM_8_16_23.pdf", width=9, height=6)
+faceted_plot_4
+dev.off()
+```
+
+
+
+
+###merge counts and metadata to look at contig length distribution
+```{r}
+names(read_coverage)[names(read_coverage) == 'Assembly'] <- "samples"
+
+read_coverage_metadata_2 <- inner_join(metadata, read_coverage, by = c("samples"))
+```
+
+
+###plot contig length distribution
+```{r}
+length_distribution <- ggplot(read_coverage_metadata_2, aes(x=Length, fill=fraction)) +
+  geom_histogram(binwidth = 100) +
+  xlim(1000,100000) +
+  scale_fill_jcolors(palette = "default") +
+  ggtitle("Length distribution of viral contigs between 1kb-100kb") +
+  xlab("Viral Contig Length (binwidth=100)") +
+  ylab("Number of Contigs") +
+  guides(colour = guide_legend(override.aes = list(size=10))) +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        strip.text = element_text(size = 18),
+        strip.background = element_rect(colour= "black", fill = "lemon chiffon", linetype= "solid"),
+        axis.title=element_text(size=18),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=14, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+length_distribution + 
+  facet_grid(fraction ~ .)
+
+```
+```{r}
+png("~/Desktop/erie_story_r_work/1kb_100kb_length_distribution.png", width=1000, height=600)
+length_distribution + facet_grid(vars(fraction)) +
+theme(strip.text = element_text(face = "bold", hjust = 0.5, size = 16),
+        strip.background = element_rect(colour = "black", fill = "lemonchiffon", linetype = "solid"))
+dev.off()
+```
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/1kb_100kb_length_distribution.png.pdf", width=9, height=6)
+length_distribution + facet_grid(vars(fraction)) +
+theme(strip.text = element_text(face = "bold", hjust = 0.5, size = 16),
+        strip.background = element_rect(colour = "black", fill = "lemonchiffon", linetype = "solid"))
+dev.off()
+```
+##over 10kb length plot
+```{r}
+ten_kb_length_distribution <- ggplot(over_ten_kb_length, aes(x=Length, fill=fraction)) +
+  geom_histogram(binwidth = 100) +
+  xlim(10000,100000) +
+  scale_fill_jcolors(palette = "default") +
+  ggtitle("Length distribution of viral contigs between 10kb-100kb") +
+  xlab("Viral Contig Length (bindwidth=100)") +
+  ylab("Number of Contigs") +
+  guides(colour = guide_legend(override.aes = list(size=10))) +
+  theme(axis.text.x = element_text(angle =45, hjust = 1)) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        axis.title=element_text(size=18),
+        strip.text = element_text(size = 18),
+        strip.background = element_rect(colour= "black", fill = "lemon chiffon", linetype= "solid"),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        plot.title = element_text(size = 24, hjust = 0.5, colour = "black"),
+        axis.text.y = element_text(size=14, colour = "black"),
+        axis.text.x  = element_text(size=14, colour="black"),
+        plot.margin = unit(c(1, 1, 1, 1),"lines"))
+        plot.margin = margin(t = 1,  # Top margin
+                             r = 1,  # Right margin
+                             b = 3,  # Bottom margin
+                             l = 2,  # Left margin
+                             unit = "cm")
+
+ten_kb_length_distribution + 
+  facet_grid(fraction ~ .)
+
+```
+```{r}
+png("~/Desktop/erie_story_r_work/10kb_100kb_length_distribution.png", width=1000, height=600)
+ten_kb_length_distribution + facet_grid(vars(fraction)) +
+theme(strip.text = element_text(face = "bold", hjust = 0.5, size = 16),
+        strip.background = element_rect(colour = "black", fill = "lemonchiffon", linetype = "solid"))
+dev.off()
+```
+
+```{r}
+pdf("~/Desktop/erie_story_r_work/10kb_100kb_length_distribution.png.pdf", width=9, height=6)
+ten_kb_length_distribution + facet_grid(vars(fraction)) +
+theme(strip.text = element_text(face = "bold", hjust = 0.5, size = 16),
+        strip.background = element_rect(colour = "black", fill = "lemonchiffon", linetype = "solid"))
+dev.off()
+```
+
+###get stats for viral contig lengths
+```{r}
+sum_contig_length <- read_coverage_metadata_2 %>% group_by(fraction) %>% 
+  summarise_at(vars(Length), list(name= mean))
+
+sum_contig_length
+
+over_ten_kb_length <- read_coverage_metadata_2[which(read_coverage_metadata_2$Length > 10000), ]
+
+amt_over_ten_kb_length <- over_ten_kb_length %>% group_by(fraction) %>% tally()
+  s
+```
+
+```{r}
+num_samples_contig_in <- read_tsv("~/Desktop/erie_story_r_work/num_samples_contig_in.tsv", col_names = T)
+
+```
+
+
+```{r}
+VPs <- read_tsv("~/Desktop/erie_story_r_work/VPs.tsv", col_names = T)
+
+```
