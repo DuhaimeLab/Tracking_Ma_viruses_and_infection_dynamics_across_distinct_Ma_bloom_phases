@@ -1,0 +1,93 @@
+# Read mapping 
+
+#to run snakemake: conda activate snakemake
+
+#set a workflow config file
+configfile: "Config/aug4_ajw_config_samples.yaml"
+sample = config["samples"]
+
+#configfile: "Config/assemblies_samples_combos.yaml"
+#assemblies=config['assembly']
+#combos=config['combinations']
+
+
+#if want to run on just some files
+#assemblies = ["B"]
+#combos = ["B--mgp80824_B"]
+
+rule all_mappingcompetitively:
+    input:
+        counts="FeatureCounts/merged_viral_contigs_count.txt"
+
+rule blastdb:
+    input:
+        fasta="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/2014_erie_assemblies_1kb/sample_{sample}_1kb_contigs.fa"
+    params:
+        basepath="Blast/{sample}_db"
+    output:
+        o1="Blast/{sample}_db.nsq",
+        o2="Blast/{sample}_db.nin",
+        o3="Blast/{sample}_db.nhr"
+    shell:
+        """
+        module load Bioinformatics
+        module load blast-plus
+        makeblastdb -in {input.fasta} -dbtype nucl -out {params.basepath}
+        """
+
+rule blast_nf:
+    input:
+        fa="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/whole_community_mapping/aug4_phages/all_aug4_phages.fasta",
+        i1="Blast/{sample}_db.nhr"
+    output:
+        o="Blast/{sample}_results.txt"
+    params:
+        db="Blast/{sample}_db",
+        threads=15,
+        numalign=5
+    shell:
+        """
+        module load Bioinformatics
+        module load blast-plus
+        blastn -num_threads {params.threads} -num_alignments {params.numalign} \
+        -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+        -db {params.db} -query {input.fa} -out {output.o}
+        """
+
+rule blast2gff:
+    input:
+        blast="Blast/{sample}_results.txt"
+    params:
+        type="viral"
+    output:
+        gff="Blast/{sample}.gff"
+    shell:
+        "python Scripts/blast2gff.py {input.blast} {output.gff} {params.type}"
+
+rule featureCounts:
+    input:
+        gff="Blast/{sample}.gff",
+        bam="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/whole_community_mapping/mapping_results_aug4_phages/sorted_reads/all_aug4_phages_Sample{sample}_sorted.bam"
+    output:
+        output="FeatureCounts/{sample}_viral_contigs_count.txt"
+    params:
+        type="viral",
+        g="ID"
+    shell:
+        """
+        module load singularity
+        singularity exec /nfs/turbo/lsa-dudelabs/containers/subreads/subreads.sif featureCounts -p -t {params.type} -a {input.gff} -g {params.g} -o {output.output} {input.bam}
+        """
+
+rule mergefeatureCounts:
+    input: 
+        counts=lambda wildcards: ["FeatureCounts/{0}_viral_contigs_count.txt".format(combo) for combo in sample]
+    output:
+        merged="FeatureCounts/merged_viral_contigs_count.txt"
+    shell:
+        "python Scripts/merge_orf_mapping.py {output.merged} {input.counts}"
+
+
+
+
+

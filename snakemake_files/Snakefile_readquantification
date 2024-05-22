@@ -1,0 +1,68 @@
+# Read quantification for AJ
+
+#to use modules: module load Bioinformatics
+#to run snakemake: conda activate snakemake
+
+#set a workflow config file
+configfile: "Config/ajw_config_samples.yaml"
+SAMPLE = config["samples"]
+
+
+#if want to run on just some files
+#SAMPLE = ["49614"]
+
+rule all_clustermapping:
+    input:
+        merge="results/merged/combined_merged_counts.txt"
+
+rule get_mapped_reads:
+    input:
+        "/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/mapping_for_viral_prediction/Sample_{sample}/Sample_{sample}_sorted.bam"
+    params:
+        F="2"
+    output:
+        "bwa/paired_mapped_reads/erie_Sample_{sample}_paired_mapped.bam"
+    shell:
+        """
+        module load Bioinformatics
+        module load samtools/1.9
+        samtools view -b -F {params.F} {input} > {output}
+        """
+
+rule sort_virus:
+    input:
+        "bwa/paired_mapped_reads/erie_Sample_{sample}_paired_mapped.bam"
+    output:
+        "bwa/sorted_reads/erie_Sample_{sample}_sorted.bam"
+    shell:
+        """
+        module load Bioinformatics
+        module load samtools/1.9
+        samtools sort {input} -o {output}
+        """
+
+rule counts_virus:
+    input:
+        "bwa/sorted_reads/erie_Sample_{sample}_sorted.bam"
+    output:
+        "results/counts/erie_counts_Sample_{sample}.txt"
+    shell:
+        """
+        module load Bioinformatics
+        module load samtools/1.9
+        samtools view {input} | cut -f1,3 | sort | uniq | cut -f2 | sort | uniq -c > {output}
+        """
+
+#to have wildcards in the input of a rule but not in the output of the rule
+def table_inputs(folder, extension, wildcards):
+    files=expand("%s{sample}%s" % (folder,extension), sample=SAMPLE)
+    return files
+
+rule merge_counts_virus:
+    input:
+        counts=table_inputs(folder="results/counts/erie_counts_Sample_", extension=".txt", wildcards=SAMPLE)
+    output:
+        merge="results/merged/combined_merged_counts.txt"
+    script:
+        "Scripts/merge_readmappingcounts.py"
+        # prints a list of read counts from all samples

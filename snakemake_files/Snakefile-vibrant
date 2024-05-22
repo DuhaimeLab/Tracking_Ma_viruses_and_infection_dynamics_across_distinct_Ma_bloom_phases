@@ -1,0 +1,83 @@
+# Processing of the Assembly file
+
+#to run snakemake: conda activate cluster_kaiju
+
+#set a workflow config file
+configfile: "Config/ajw_config_samples.yaml"
+SAMPLE = config["samples"]
+
+#if want to run on just some files
+#SAMPLE = ["49613"]
+
+rule all_vibrant:
+    input:
+        #vb="Classifications/vibrant_merged_contig_list.txt",
+        #vba="Classifications/vibrant_merged_lytic_phages_contig_list.txt",
+        #vbp="Classifications/vibrant_merged_lysogenic_phages_contig_list.txt",
+        #vbmh="Classifications/vibrant_merged_contig_list_medium_high.txt",
+        #annot="Classifications/vibrant_merged_AMG_pathways.txt",
+        all="Classifications/vibrant_merged_contig_list_all.txt"
+
+
+#to have wildcards in the input of a rule but not in the output of the rule
+def table_inputs(folder, name, wildcards):
+    files=expand("%s{sample}%s" % (folder, name), sample=SAMPLE)
+    return files
+
+#all lysogenic and lytic phages, including prophages (no circular phages)
+rule vb_merge_contig_list:
+    input:
+        i=table_inputs_2(folder1="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/VIBRANT-master/1kb_le_contigs_VIBRANT_results/VIBRANT_sample_", folder2="_1kb_contigs/VIBRANT_phages_sample_", folder3="_1kb_contigs/sample_", name="_1kb_contigs.phages_combined.txt", wildcards=SAMPLE)
+    output:
+        merge="Classifications/vibrant_merged_contig_list.txt"
+    script:
+        "Scripts/merge_vibrant.py"
+
+#just the lytic phages
+rule vb_lytic:
+    input:
+        i=table_inputs_2(folder1="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/VIBRANT-master/1kb_le_contigs_VIBRANT_results/VIBRANT_sample_", folder2="_1kb_contigs/VIBRANT_phages_sample_", folder3="_1kb_contigs/sample_", name="_1kb_contigs.phages_lytic.fna", wildcards=SAMPLE)
+    output:
+        merge="Classifications/vibrant_merged_lytic_phages_contig_list.txt"
+    script:
+        "Scripts/get_viruses_vibrant.py"
+
+#just the lysogenic phages
+rule vb_lysogenic:
+    input:
+        i=table_inputs_2(folder1="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/VIBRANT-master/1kb_le_contigs_VIBRANT_results/VIBRANT_sample_", folder2="_1kb_contigs/VIBRANT_phages_sample_", folder3="_1kb_contigs/sample_", name="_1kb_contigs.phages_lysogenic.fna", wildcards=SAMPLE)
+    output:
+        merge="Classifications/vibrant_merged_lysogenic_phages_contig_list.txt"
+    script:
+        "Scripts/get_viruses_vibrant.py"
+
+#all the medium and high quality phages (not including prophages)
+rule vb_merge_contig_list_high_medium:
+    input:
+        i=table_inputs_2(folder1="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/VIBRANT-master/1kb_le_contigs_VIBRANT_results/VIBRANT_sample_", folder2="_1kb_contigs/VIBRANT_results_sample_", folder3="_1kb_contigs/VIBRANT_genome_quality_sample_", name="_1kb_contigs.tsv", wildcards=SAMPLE)
+    output:
+        merge="Classifications/vibrant_merged_contig_list_medium_high.txt"
+    script:
+        "Scripts/merge_vibrant_medium_high.py"
+
+#all the phages (including circular)
+rule vb_merge_contig_list_all:
+    input:
+        i=table_inputs(folder="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/VIBRANT/", name="_vibrant_results/VIBRANT_results_final.contigs/VIBRANT_genome_quality_final.contigs.tsv", wildcards=SAMPLE)
+    output:
+        merge="Classifications/vibrant_merged_contig_list_all.txt"
+    script:
+        "Scripts/merge_vibrant_all.py"
+
+#merging the AMG information
+rule vb_merge_AMGs:
+    input:
+        i=table_inputs_2(folder1="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/VIBRANT-master/1kb_le_contigs_VIBRANT_results/VIBRANT_sample_", folder2="_1kb_contigs/VIBRANT_results_sample_", folder3="_1kb_contigs/VIBRANT_AMG_pathways_sample_", name="_1kb_contigs.tsv", wildcards=SAMPLE)
+    output:
+        merge="Classifications/vibrant_merged_AMG_pathways.txt"
+    script:
+        "Scripts/merge_vibrant_AMGs.py"
+
+
+
+

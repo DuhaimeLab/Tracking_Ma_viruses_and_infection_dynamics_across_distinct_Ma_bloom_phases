@@ -1,0 +1,29 @@
+# Processing of the Assembly file
+
+#to run snakemake: conda activate cluster_kaiju
+
+#set a workflow config file
+configfile: "Config/long_term_samples.yaml"
+SAMPLE = config["samples"]
+
+#if want to run on just some files
+#SAMPLE = ["49613"]
+
+rule all_vibrant:
+    input:
+        all="Classifications/vibrant_merged_contig_list_all.txt"
+
+
+#to have wildcards in the input of a rule but not in the output of the rule
+def table_inputs(folder, name, wildcards):
+    files=expand("%s{sample}%s" % (folder, name), sample=SAMPLE)
+    return files
+
+#all the phages (including circular)
+rule vb_merge_contig_list_all:
+    input:
+        i=table_inputs(folder="/scratch/duhaimem_root/duhaimem0/ajwing/ajw_chapter2/vibrant_outputs/vibrant_results_", name="/VIBRANT_final.contigs.renamed/VIBRANT_results_final.contigs.renamed/VIBRANT_genome_quality_final.contigs.renamed.tsv", wildcards=SAMPLE)
+    output:
+        merge="Classifications/vibrant_merged_contig_list_all.txt"
+    script:
+        "Scripts/merge_vibrant_all.py"

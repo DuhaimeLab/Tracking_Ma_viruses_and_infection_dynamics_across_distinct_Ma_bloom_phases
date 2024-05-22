@@ -1,0 +1,293 @@
+# Read processing and viral mapping
+
+#to run snakemake: conda activate snakemake
+
+#set a workflow config file
+configfile: "Config/ajw_config_samples.yaml"
+SAMPLE = config["samples"]
+
+
+#if want to run on just some files
+#SAMPLE = ["SRR1577908"]
+
+rule all_clustermapping:
+    input:
+        merge2="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/merged_trimmed_viruses_only_downsampled_1000000.txt",
+#        merge="ClusterTrimmedViruses/Bowtie2/Results/merged_trimmed_viruses_paired_reads.txt",
+#        coverage="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_sorted_coverage_merged.tsv"
+
+
+#rule fastp:
+#    input:
+#        forward="/nfs/turbo/cee-kwigg/hegartyb/SnakemakeReadProcessing/RawReads/{sample}_pass_1.fastq.gz",
+#        reverse_reads="/nfs/turbo/cee-kwigg/hegartyb/SnakemakeReadProcessing/RawReads/{sample}_pass_2.fastq.gz"
+#    output:
+#        forward="Fastp/{sample}_1P.fq",
+#        reverse_reads="Fastp/{sample}_2P.fq",
+#        singleton="Fastp/{sample}_U.fq",
+#        html="Fastp/{sample}.html",
+#        json="Fastp/{sample}.json"
+#    params:
+#        threads="20"
+#    shell:
+#        """
+#        fastp --thread {params.threads} --in1 {input.forward} --in2 {input.reverse_reads} --out1 {output.forward} --out2 {output.reverse_reads} --unpaired1 {output.singleton} --unpaired2 {output.singleton} -h {output.html} -j {output.json} --trim_poly_g --trim_poly_x --qualified_quality_phred 20 --length_required 20 --dont_overwrite
+#        """
+
+#rule bowtie_build_univec:
+#    input:
+#        mapping_file="Bowtie2/UniVecCore/univec_core.fa"
+#    params:
+#        mapping_ref="Bowtie2/UniVecCore/univec_core"
+#    output:
+#        mapping_ref="Bowtie2/UniVecCore/univec_core.rev.1.bt2",
+#        mapping_ref2="Bowtie2/UniVecCore/univec_core.1.bt2"
+#    shell:
+#        """
+#        bowtie2-build -f {input.mapping_file} {params.mapping_ref}
+#        """
+
+#rule bowtie_univec:
+#    input:
+#        read_file_1="Fastp/{sample}_1P.fq",
+#        read_file_2="Fastp/{sample}_2P.fq",
+#        index_build="Bowtie2/UniVecCore/univec_core.rev.1.bt2"
+#    params:
+#        score_min="G,20,8",
+#        p="8",
+#        mapping_ref="Bowtie2/UniVecCore/univec_core"
+#    output:
+#        sam="Bowtie2/UniVecCore/univec_core_{sample}.sam"
+#    shell:
+#        """
+#        bowtie2 -x {params.mapping_ref} -1 {input.read_file_1} -2 {input.read_file_2} -q --score-min {params.score_min} --local -t -p {params.p} -S {output.sam}
+#        """
+
+#rule view_sam_univec:
+#    input:
+#        sam="Bowtie2/UniVecCore/univec_core_{sample}.sam"
+#    params:
+#        F1="2"
+#    output:
+#        sam="Bowtie2/UniVecCore/univec_core_removed_{sample}.sam"
+#    shell:
+#        """
+#        samtools view -hS -F {params.F1} {input.sam} > {output.sam}
+#        """
+
+#rule sam_to_fasta_univec:
+#    input:
+#        sam="Bowtie2/UniVecCore/univec_core_removed_{sample}.sam"
+#    output:
+#        fastqF="ProcessedReads/univec_core_removed_{sample}_F.fq",
+#        fastqR="ProcessedReads/univec_core_removed_{sample}_R.fq"
+#    shell:
+#        """
+#        samtools fastq -1 {output.fastqF} -2 {output.fastqR} -0 /dev/null -s /dev/null -n {input.sam}
+#        """
+
+# MAP TO ClusterTrimmedViruses
+
+rule bowtie_build:
+    input:
+        mapping_file="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/merged_3000_trimmed_viruses_only_95-85.fna"
+    params:
+        mapping_ref="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/merged_3000_trimmed_viruses_only_95-85"
+    output:
+        mapping_ref="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/merged_3000_trimmed_viruses_only_95-85.rev.1.bt2",
+        mapping_ref2="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/merged_3000_trimmed_viruses_only_95-85.1.bt2"
+    shell:
+        """
+        bowtie2-build -f {input.mapping_file} {params.mapping_ref}
+        """
+
+#rule bowtie_virus:
+#    input:
+#        fastqF="ProcessedReads/univec_core_removed_{sample}_F.fq",
+#        fastqR="ProcessedReads/univec_core_removed_{sample}_R.fq",
+#        index_build="ClusterTrimmedViruses/Bowtie2/merged_3000_trimmed_viruses_only_95-85.1.bt2"
+#    params:
+#        score_min="G,20,8",
+#        p="8",
+#        mapping_ref="ClusterTrimmedViruses/Bowtie2/merged_3kb_trimmed_viruses_and_ma_virus_references_95-85"
+#    output:
+#        sam="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_trimmed_viruses_{sample}.sam"
+#    shell:
+#        """
+#        bowtie2 -x {params.mapping_ref} -1 {input.fastqF} -2 {input.fastqR} -q --score-min {params.score_min} --local -t -p {params.p} -S {output.sam}
+#        """
+
+#rule view_sam_virus:
+#    input:
+#        sam="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_trimmed_viruses_{sample}.sam"
+#    params:
+#        F="2"
+#    output:
+#        sam="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_{sample}.sam"
+#    shell:
+#        """
+#        samtools view -hS -f {params.F} {input.sam} > {output.sam}
+#        """
+
+#rule view_bam_virus:
+#    input:
+#        sam="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_{sample}.sam"
+#    output:
+#        bam="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_{sample}.bam"
+#    shell:
+#        """
+#        samtools view -bS {input.sam} > {output.bam}
+#        """
+
+#rule sort_virus:
+#    input:
+#        bam="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_{sample}.bam"
+#    output:
+#        sort="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_sorted_{sample}.bam"
+#    shell:
+#        """
+#        samtools sort {input.bam} -o {output.sort}
+#        """
+
+#rule counts_virus:
+#    input:
+#        bam="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_sorted_{sample}.bam"
+#    output:
+#        counts="ClusterTrimmedViruses/Bowtie2/Results/prophages_and_viruses_paired_reads_align_on_95-85_{sample}.txt"
+#    shell:
+#        """
+#        samtools view {input.bam} | cut -f1,3 | sort | uniq | cut -f2 | sort | uniq -c > {output.counts}
+#        """
+
+#to have wildcards in the input of a rule but not in the output of the rule
+#def table_inputs(folder, extension, wildcards):
+#    files=expand("%s{sample}%s" % (folder,extension), sample=SAMPLE)
+#    return files
+
+#rule merge_counts_virus:
+#    input:
+#        counts=table_inputs(folder="ClusterTrimmedViruses/Bowtie2/Results/prophages_and_viruses_paired_reads_align_on_95-85_", extension=".txt", wildcards=SAMPLE)
+#    output:
+#        merge="ClusterTrimmedViruses/Bowtie2/Results/merged_trimmed_viruses_paired_reads.txt"
+#    script:
+#        "Scripts/merge_readmappingcounts.py"
+
+
+rule sam_to_fasta_univec_virus:
+    input:
+        sam="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/mapping_for_viral_prediction/Sample_{sample}/Sample_{sample}_sorted.sam"
+    output:
+        fastqF="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/ProcessedReads/prophages_and_viruses_paired_reads_{sample}_F.fq",
+        fastqR="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/ProcessedReads/prophages_and_viruses_paired_reads_{sample}_R.fq"
+    shell:
+        """
+        samtools fastq -1 {output.fastqF} -2 {output.fastqR} -0 /dev/null -s /dev/null -n {input.sam}
+        """
+
+# and then sample to the same depth of viral sequences
+
+rule downsample_virus:
+    input:
+        fastqF="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/ProcessedReads/prophages_and_viruses_paired_reads_{sample}_F.fq",
+        fastqR="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/ProcessedReads/prophages_and_viruses_paired_reads_{sample}_R.fq"
+    output:
+        fastqF="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/ProcessedReads/downsampled_1000000_trimmed_viruses_reads_{sample}_F.fq",
+        fastqR="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/ProcessedReads/downsampled_1000000_trimmed_viruses_reads_{sample}_R.fq"
+    shell:
+        """
+        seqtk sample -s100 {input.fastqF} 1000000 > {output.fastqF}
+        seqtk sample -s100 {input.fastqR} 1000000 > {output.fastqR}
+        """
+
+rule bowtie_virus_downsampled:
+    input:
+        fastqF="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/ProcessedReads/downsampled_1000000_trimmed_viruses_reads_{sample}_F.fq",
+        fastqR="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/ProcessedReads/downsampled_1000000_trimmed_viruses_reads_{sample}_R.fq",
+        index_build="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/merged_3000_trimmed_viruses_only_95-85.1.bt2"
+    params:
+        score_min="G,20,8",
+        p="8",
+        mapping_ref="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/merged_3000_trimmed_viruses_only_95-85"
+    output:
+        sam="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/Reads_align_on_95-85_trimmed_viruses_only_downsampled_{sample}.sam"
+    shell:
+        """
+        bowtie2 -x {params.mapping_ref} -1 {input.fastqF} -2 {input.fastqR} -q --score-min {params.score_min} --local -t -p {params.p} -S {output.sam}
+        """
+
+rule view_sam_virus_downsampled:
+    input:
+        sam="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/Reads_align_on_95-85_trimmed_viruses_only_downsampled_{sample}.sam"
+    params:
+        F="4"
+    output:
+        sam="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/Reads_align_on_95-85_trimmed_viruses_only_downsampled_mappped_{sample}.sam"
+    shell:
+        """
+        samtools view -hS -F {params.F} {input.sam} > {output.sam}
+        """
+
+rule view_bam_virus_downsampled:
+    input:
+        sam="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/Reads_align_on_95-85_trimmed_viruses_only_downsampled_mappped_{sample}.sam"
+    output:
+        bam="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/Reads_align_on_95-85_trimmed_viruses_only_downsampled_mappped_{sample}.bam"
+    shell:
+        """
+        samtools view -bS {input.sam} > {output.bam}
+        """
+
+rule sort_virus_downsampled:
+    input:
+        bam="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/Reads_align_on_95-85_trimmed_viruses_only_downsampled_mappped_{sample}.bam"
+    output:
+        sort="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/Reads_align_on_95-85_trimmed_viruses_only_downsampled_mappped_sorted_{sample}.bam"
+    shell:
+        """
+        samtools sort {input.bam} -o {output.sort}
+        """
+
+rule counts_virus_downsampled:
+    input:
+        bam="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/Reads_align_on_95-85_trimmed_viruses_only_downsampled_mappped_sorted_{sample}.bam"
+    output:
+        counts="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/Reads_align_on_95-85_trimmed_viruses_only_downsampled_{sample}.txt"
+    shell:
+        """
+        samtools view {input.bam} | cut -f1,3 | sort | uniq | cut -f2 | sort | uniq -c > {output.counts}
+        """
+
+#to have wildcards in the input of a rule but not in the output of the rule
+def table_inputs(folder, extension, wildcards):
+    files=expand("%s{sample}%s" % (folder,extension), sample=SAMPLE)
+    return files
+
+rule merge_counts_virus_downsampled:
+    input:
+        counts=table_inputs(folder="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/Reads_align_on_95-85_trimmed_viruses_only_downsampled_", extension=".txt", wildcards=SAMPLE)
+    output:
+        merge="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/ViralSeqs/ClusterGenomes/Results/merged_trimmed_viruses_only_downsampled_1000000.txt"
+    script:
+        "Scripts/merge_readmappingcounts_downsampled.py"
+
+#######
+##Adding read coverage steps
+#######
+#
+#rule coverage:
+#    input:
+#        inbam="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_sorted_{sample}.bam"
+#    output:
+#        coverage="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_sorted_coverage_{sample}.tsv"
+#    shell:
+#        """
+#        samtools coverage {input.inbam} > {output.coverage}
+#        """
+#
+#rule coverage_merge:
+#    input:
+#        tsv=table_inputs(folder="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_sorted_coverage_", #extension=".tsv", wildcards=SAMPLE)
+#    output:
+#        coverage="ClusterTrimmedViruses/Bowtie2/Results/Reads_align_on_95-85_virus_paired_mapped_sorted_coverage_merged.tsv"
+#    script:
+#        "Scripts/merge_coverage_mapping.py"#

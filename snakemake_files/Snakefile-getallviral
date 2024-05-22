@@ -1,0 +1,56 @@
+# Contig processing, blast on viral sequences against mycobacteriophages, pulling out all mycobacteriophage contigs
+
+#to run snakemake: conda activate cluster_kaiju
+
+#set a workflow config file
+configfile: "Config/ajw_config_samples.yaml"
+SAMPLE = config["samples"]
+
+#if want to run on just some files
+#SAMPLE = ["49613"]
+
+rule all_getallviral:
+    input:
+        p="Classifications/viral_contigs_1000_final.txt",
+        m="ViralSeqs/merged_1000_viruses_only.fa"
+
+#rule merge_all_methods:
+#    input:
+#        ivf="Classifications/vf_merged_all_viral_only_0.9.txt",
+#        ivs="Classifications/vs_merged_all_cat1and2_only.txt",
+#        ivb="Classifications/vibrant_merged_contig_list_medium_high.txt",
+#        ivf2="Classifications/vf_merged_all_viral_only_0.7.txt",
+#        ivs2="Classifications/vs_merged_all_cat1_2_3.txt",
+#        ivb2="Classifications/vibrant_merged_contig_list_no_prophages.txt"
+#    output:
+#        o="Classifications/viral_contigs_1000_final.txt"
+#    script:
+#        "Scripts/merging_viral_2.R"
+
+#run R script "merging_viral_filenames.R"
+
+rule get_virus_fasta:
+    input:
+        fasta="/home/hegartyb/AssembliesByDot/{sample}_1000.fasta",
+        clist="Classifications/viral_contigs_1000_final.txt"
+    params:
+        assembly="{sample}"
+    output:
+        fasta="ViralSeqs/{sample}_1000_viralonly.fa"
+    script:
+        "Scripts/get_viral_fasta_files_2.py"
+
+#to have wildcards in the input of a rule but not in the output of the rule
+def table_inputs(folder, name, wildcards):
+    files=expand("%s{sample}%s" % (folder, name), sample=SAMPLE)
+    return files
+
+rule merge_get_virus_fasta:
+    input: 
+        i=table_inputs(folder="ViralSeqs/", name="_1000_viralonly.fa", wildcards=SAMPLE)
+    output:
+        o="ViralSeqs/merged_1000_viruses_only.fa"
+    shell:
+        """
+        cat {input.i} > {output.o}
+        """

@@ -1,0 +1,111 @@
+# Read mapping and viral binning attempt
+
+#to use modules: module load Bioinformatics
+#to run snakemake: conda activate snakemake
+
+#declare wildcards
+
+#set a workflow config file
+configfile: "/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/Config/mckindles_mapping_config.yaml"
+SAMPLE = config["samples"]
+
+#if want to run on just some files
+#SAMPLE = ["49613"]
+
+rule all_clustermapping:
+    input:
+#        merge2="ClusterTrimmedViruses/Bowtie2/Results/merged_trimmed_viruses_downsampled_10000.txt",
+        merge="Results/merged/lem01_and_mckindles_combined_merged_counts.txt"
+
+# MAP TO ClusterTrimmedViruses
+
+rule bowtie_build:
+    input:
+        "/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/mckindles_mapping/lem01_and_mckindles.fasta"
+    params:
+        "Bowtie2/build/lem01_and_mckindles_combined"
+    output:
+        index_build="Bowtie2/build/lem01_and_mckindles_combined.rev.1.bt2",
+        index_build2="Bowtie2/build/lem01_and_mckindles_combined.1.bt2"
+    shell:
+        """
+        module load bowtie2/2.4.1
+        bowtie2-build -f {input} {params}
+        """
+
+rule bowtie:
+    input:
+        fastqF="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/mckindles_mapping/cleaned_reads/Sample_{sample}_R1.fastq",
+        fastqR="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/mckindles_mapping/cleaned_reads/Sample_{sample}_R2.fastq",
+        index_build="Bowtie2/build/lem01_and_mckindles_combined.1.bt2"
+    params:
+        score_min="G,20,8",
+        p="8",
+        mapping_ref="Bowtie2/build/lem01_and_mckindles_combined"
+    output:
+        "Bowtie2/mapped_reads/lem01_and_mckindles_Sample{sample}_mapped.sam"
+    shell:
+        """
+        module load bowtie2/2.4.1
+        bowtie2 -x {params.mapping_ref} -1 {input.fastqF} -2 {input.fastqR} -q --score-min {params.score_min} --local -t -p {params.p} -S {output}
+        """
+
+rule view_sam_virus:
+    input:
+        "Bowtie2/mapped_reads/lem01_and_mckindles_Sample{sample}_mapped.sam"
+    params:
+        F="2"
+    output:
+        "Bowtie2/paired_mapped_reads/lem01_and_mckindles_Sample{sample}_paired_mapped.sam"
+    shell:
+        """
+        module load samtools/1.9
+        samtools view -hS -f {params.F} -F 4 {input} > {output}
+        """
+
+rule view_bam_virus:
+    input:
+        "Bowtie2/paired_mapped_reads/lem01_and_mckindles_Sample{sample}_paired_mapped.sam"
+    output:
+        "Bowtie2/paired_mapped_reads/lem01_and_mckindles_Sample{sample}_paired_mapped.bam"
+    shell:
+        """
+        module load samtools/1.9
+        samtools view -bS {input} > {output}
+        """
+
+rule sort_virus:
+    input:
+        "Bowtie2/paired_mapped_reads/lem01_and_mckindles_Sample{sample}_paired_mapped.bam"
+    output:
+        "Bowtie2/sorted_reads/lem01_and_mckindles_Sample{sample}_sorted.bam"
+    shell:
+        """
+        module load samtools/1.9
+        samtools sort {input} -o {output}
+        """
+
+rule counts_virus:
+    input:
+        "Bowtie2/sorted_reads/lem01_and_mckindles_Sample{sample}_sorted.bam"
+    output:
+        "Results/counts/lem01_and_mckindles_Sample{sample}.txt"
+    shell:
+        """
+        module load samtools/1.9
+        samtools view {input} | cut -f1,3 | sort | uniq | cut -f2 | sort | uniq -c > {output}
+        """
+
+#to have wildcards in the input of a rule but not in the output of the rule
+def table_inputs(folder, extension, wildcards):
+    files=expand("%s{sample}%s" % (folder,extension), sample=SAMPLE)
+    return files
+
+rule merge_counts_virus:
+    input:
+        counts=table_inputs(folder="Results/counts/lem01_and_mckindles_Sample", extension=".txt", wildcards=SAMPLE)
+    output:
+        merge="Results/merged/lem01_and_mckindles_combined_merged_counts.txt"
+    script:
+        "Scripts/merge_readmappingcounts.py"
+        # prints a list of read counts from all samples

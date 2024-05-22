@@ -1,0 +1,172 @@
+# Read mapping and viral binning attempt
+
+#to run snakemake: conda activate snakemake
+
+#set a workflow config file
+configfile: "Config/config_samples_all.yaml"
+SAMPLE = config["samples"]
+
+
+#if want to run on just some files
+#SAMPLE = ["B"]
+
+rule all_clustermapping:
+    input:
+        merged2="Bowtie2/Results/merged_viral_read_mapping.txt"
+        
+rule bowtie_build_univec:
+    input:
+        mapping_file="Bowtie2/UniVecCore/univec_core.fa"
+    conda:
+        "Envs/virbin.yaml"
+    params:
+        mapping_ref="Bowtie2/UniVecCore/univec_core"
+    output:
+        mapping_ref="Bowtie2/UniVecCore/univec_core.rev.1.bt2",
+        mapping_ref2="Bowtie2/UniVecCore/univec_core.1.bt2"
+    shell:
+        """
+        bowtie2-build -f {input.mapping_file} {params.mapping_ref}
+        """
+
+rule bowtie_univec:
+    input:
+        read_file_1="/nfs/turbo/cee-kwigg/hegartyb/SnakemakeReadProcessing/Fastp/{sample}_1P.fq",
+        read_file_2="/nfs/turbo/cee-kwigg/hegartyb/SnakemakeReadProcessing/Fastp/{sample}_2P.fq",
+        index_build="Bowtie2/UniVecCore/univec_core.rev.1.bt2"
+    params:
+        score_min="G,20,8",
+        p="8",
+        mapping_ref="Bowtie2/UniVecCore/univec_core"
+    conda:
+        "Envs/virbin.yaml"
+    output:
+        sam="Bowtie2/UniVecCore/univec_core_{sample}.sam"
+    shell:
+        """
+        bowtie2 -x {params.mapping_ref} -1 {input.read_file_1} -2 {input.read_file_2} -q --score-min {params.score_min} --local -t -p {params.p} -S {output.sam}
+        """
+
+rule view_sam_univec:
+    input:
+        sam="Bowtie2/UniVecCore/univec_core_{sample}.sam"
+    params:
+        F1="2"
+    conda:
+        "Envs/virbin.yaml"
+    output:
+        sam="Bowtie2/UniVecCore/univec_core_removed_{sample}.sam"
+    shell:
+        """
+        samtools view -hS -F {params.F1} {input.sam} > {output.sam}
+        """
+
+rule sam_to_fasta_univec:
+    input:
+        sam="Bowtie2/UniVecCore/univec_core_removed_{sample}.sam"
+    conda:
+        "Envs/virbin.yaml"
+    output:
+        fastqF="ProcessedReads/univec_core_removed_{sample}_F.fq",
+        fastqR="ProcessedReads/univec_core_removed_{sample}_R.fq"
+    shell:
+        """
+        samtools fastq -1 {output.fastqF} -2 {output.fastqR} -0 /dev/null -s /dev/null -n {input.sam}
+        """
+
+
+rule bowtie_build:
+    input:
+        mapping_file="ClusterGenomes/merged_3000_viruses_only_95-40.fna"
+    conda:
+        "Envs/virbin.yaml"
+    params:
+        mapping_ref="Bowtie2/merged_3000_viruses_only_95-40"
+    output:
+        mapping_ref="Bowtie2/merged_3000_viruses_only_95-40.rev.1.bt2",
+        mapping_ref2="Bowtie2/merged_3000_viruses_only_95-40.1.bt2"
+    shell:
+        """
+        bowtie2-build -f {input.mapping_file} {params.mapping_ref}
+        """
+
+rule bowtie_virus:
+    input:
+        fastqF="ProcessedReads/univec_core_removed_{sample}_F.fq",
+        fastqR="ProcessedReads/univec_core_removed_{sample}_R.fq",
+        index_build="Bowtie2/merged_3000_viruses_only_95-40.1.bt2"
+    params:
+        score_min="G,20,8",
+        p="8",
+        mapping_ref="Bowtie2/merged_3000_viruses_only_95-40"
+    conda:
+        "Envs/virbin.yaml"
+    output:
+        sam="Bowtie2/Results/Reads_align_on_merged_3000_viruses_only_95-40_virus_{sample}.sam"
+    shell:
+        """
+        bowtie2 -x {params.mapping_ref} -1 {input.fastqF} -2 {input.fastqR} -q --score-min {params.score_min} --local -t -p {params.p} -S {output.sam}
+        """
+
+rule view_sam_virus:
+    input:
+        sam="Bowtie2/Results/Reads_align_on_merged_3000_viruses_only_95-40_virus_{sample}.sam"
+    params:
+        F="4"
+    conda:
+        "Envs/virbin.yaml"
+    output:
+        sam="Bowtie2/Results/Bowtie2/Results/Reads_align_on_merged_3000_viruses_only_95-40_mapped_{sample}.sam"
+    shell:
+        """
+        samtools view -hS -F {params.F} {input.sam} > {output.sam}
+        """
+
+rule view_bam_virus:
+    input:
+        sam="Bowtie2/Results/Bowtie2/Results/Bowtie2/Results/Reads_align_on_merged_3000_viruses_only_95-40_mapped_{sample}.sam"
+    conda:
+        "Envs/virbin.yaml"
+    output:
+        bam="Bowtie2/Results/Reads_align_on_merged_3000_viruses_only_95-40_virus_mappped_{sample}.bam"
+    shell:
+        """
+        samtools view -bS {input.sam} > {output.bam}
+        """
+
+rule sort_virus:
+    input:
+        bam="Bowtie2/Results/Reads_align_on_merged_3000_viruses_only_95-40_virus_mappped_{sample}.bam"
+    conda:
+        "Envs/virbin.yaml"
+    output:
+        sort="Bowtie2/Results/Reads_align_on_merged_3000_viruses_only_95-40_virus_mappped_sorted_{sample}.bam"
+    shell:
+        """
+        samtools sort {input.bam} -o {output.sort}
+        """
+
+rule counts_virus:
+    input:
+        bam="Bowtie2/Results/Reads_align_on_merged_3000_viruses_only_95-40_virus_mappped_sorted_{sample}.bam"
+    conda:
+        "Envs/virbin.yaml"
+    output:
+        counts="Bowtie2/Results/Reads_align_on_merged_3000_viruses_only_95-40_{sample}.txt"
+    shell:
+        """
+        samtools view {input.bam} | cut -f1,3 | sort | uniq | cut -f2 | sort | uniq -c > {output.counts}
+        """
+
+#to have wildcards in the input of a rule but not in the output of the rule
+def table_inputs(folder, extension, wildcards):
+    files=expand("%s{sample}%s" % (folder,extension), sample=SAMPLE)
+    return files
+
+rule merge_counts_virus_downsampled:
+    input:
+        counts=table_inputs(folder="Bowtie2/Results/Reads_align_on_merged_3000_viruses_only_95-40_", extension=".txt", wildcards=SAMPLE)
+    output:
+        merge="Bowtie2/Results/merged_viral_read_mapping.txt"
+    script:
+        "Scripts/merge_readmappingcounts.py"

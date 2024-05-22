@@ -1,0 +1,49 @@
+# Contig processing, blast on viral sequences against mycobacteriophages, pulling out all mycobacteriophage contigs
+
+#to run snakemake: conda activate cluster_kaiju
+
+#set a workflow config file
+configfile: "Config/ajw_config_samples.yaml"
+SAMPLE = config["samples"]
+
+#if want to run on just some files
+#SAMPLE = ["co-1"]
+
+rule all_getallviral:
+    input:
+         m="ViralSeqsTrimmed/merged_3000_trimmed_viruses_only.fa"
+
+#run R script "identifying_viral_contigs-virfinder_vibrant_virsorter_checkv.Rmd"
+
+rule get_virus_fasta:
+    input:
+        checkv_fasta="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/checkV/{sample}/proviruses.fna",
+        virsorter2_fasta="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/VirSorter2/Sample_{sample}.out/final-viral-combined.fa",
+        vibrant_fasta="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/VIBRANT/{sample}_vibrant_results/VIBRANT_phages_final.contigs/final.contigs.phages_combined.fna",
+        free_fasta="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/assemblies_for_viral_prediction/Sample_{sample}/Megahit_meta-sensitive_out/final.contigs.fa",
+        clist="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/Classifications/viral_contigs_method_identified_by_virfinder_virsorter_vibrant_virsorter2_polish_with_checkv_20211206.txt"
+    params:
+        assembly="{sample}",
+        asssembly_column="0",
+        contig_column="1"
+    output:
+        fasta="ViralSeqsTrimmed/{sample}_3000_viralonly.fa"
+    conda:
+        "Envs/biopython.yaml"
+    script:
+        "Scripts/get_trimmed_viral_contigs.py"
+
+#to have wildcards in the input of a rule but not in the output of the rule
+def table_inputs(folder, name, wildcards):
+    files=expand("%s{sample}%s" % (folder, name), sample=SAMPLE)
+    return files
+
+rule merge_get_virus_fasta:
+    input:
+        i=table_inputs(folder="ViralSeqsTrimmed/", name="_3000_viralonly.fa", wildcards=SAMPLE)
+    output:
+        o="ViralSeqsTrimmed/merged_3000_trimmed_viruses_only.fa"
+    shell:
+        """
+        cat {input.i} > {output.o}
+        """

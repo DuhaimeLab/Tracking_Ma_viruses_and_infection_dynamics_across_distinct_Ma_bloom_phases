@@ -1,0 +1,55 @@
+# Contig processing, blast on viral sequences against mycobacteriophages, pulling out all mycobacteriophage contigs
+
+#to run snakemake: conda activate cluster_kaiju
+
+#set a workflow config file
+configfile: "Config/single_sample.yaml"
+SAMPLE = config["samples"]
+
+
+#if want to run on just some files
+#SAMPLE = ["49614"]
+
+rule all_checkV:
+    input:
+        merged="CheckV/merged_quality_summary.tsv"
+
+rule checkV_endtoend:
+    input:
+        fasta="/nfs/turbo/lsa-duhaimem/ajwing/long_term_erie_samples_assemblies/samp_{sample}/assembly/megahit_noNORM/final.contigs.renamed.fa"
+    params:
+        threads="4",
+        directory="/scratch/duhaimem_root/duhaimem/ajwing/ajw_2014_bloom/final_SnakemakePipeline/checkV/{sample}",
+        database="/nfs/turbo/lsa-duhaimem/ajwing/checkv-db-v1.4"
+    conda:
+        "Envs/checkV.yaml"
+    output:
+        out1="CheckV/{sample}/contamination.tsv",
+	out2="CheckV/{sample}/completeness.tsv",
+        out3="CheckV/{sample}/complete_genomes.tsv",
+        out4="CheckV/{sample}/quality_summary.tsv"
+    shell:
+        """
+        checkv end_to_end {input.fasta} {params.directory} -t {params.threads} -d {params.database}
+        """
+
+
+#to have wildcards in the input of a rule but not in the output of the rule
+def table_inputs(folder, name, wildcards):
+    files=expand("%s{sample}%s" % (folder, name), sample=SAMPLE)
+    return files
+
+rule merge_checkV:
+    input: 
+        i=table_inputs(folder="CheckV/", name="/quality_summary.tsv", wildcards=SAMPLE)
+    output:
+        merge="CheckV/merged_quality_summary.tsv"
+    script:
+        "Scripts/merge_checkv.py"
+
+
+
+
+
+
+

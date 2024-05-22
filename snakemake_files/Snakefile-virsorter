@@ -1,0 +1,84 @@
+# Processing of the contigs, VirSorter
+
+#to run snakemake: conda activate cluster_kaiju
+
+#set a workflow config file
+configfile: "Config/erie_isolates.yaml"
+SAMPLE = config["samples"]
+
+#if want to run on just some files
+#SAMPLE = ["49613"]
+
+rule all_virsorter:
+    input:
+         vs="Classifications/vs_merged.txt",
+        #vsm="Classifications/centrifuge_merged_all_myco.txt",
+         vsa="Classifications/vs_merged_all_cat1and2_only.txt",
+         vsp="Classifications/vs_merged_all_prophages_only.txt",
+         vs123="Classifications/vs_merged_all_cat1_2_3.txt",
+        #all="Classifications/vs_merged_all.txt"
+
+rule virsorter:
+    input:
+        "/nfs/turbo/lsa-duhaimem/ajwing/ajw_chapter_2/erie_isolate_assemblies/ND-{sample}/Megahit_meta-sensitive_out/final.contigs.fa"
+    output:
+        o1="VirSorter/{sample}/VIRSorter_global-phage-signal.csv",
+        o2="VirSorter/{sample}/Readme.txt"
+    params:
+        "VirSorter/{sample}"
+    conda:
+        "Envs/virsorter2.yaml"
+    shell:
+        """
+        /nfs/turbo/lsa-duhaimem/software/VirSorter/wrapper_phage_contigs_sorter_iPlant.pl \
+        -f {input} --db 1 \
+        --wdir {params} \
+        --data-dir "/nfs/turbo/lsa-duhaimem/software/virsorter-data" \
+        --ncpu 12
+        """
+
+#to have wildcards in the input of a rule but not in the output of the rule
+def table_inputs(folder, name, wildcards):
+    files=expand("%s{sample}%s" % (folder, name), sample=SAMPLE)
+    return files
+
+rule merge_vs:
+    input:
+        i=table_inputs(folder="VirSorter/", name="/VIRSorter_global-phage-signal.csv", wildcards=SAMPLE)
+    output:
+        o="Classifications/vs_merged.txt"
+    script:
+        "Scripts/merge_vs.py"
+
+# Get the category 1 and 2 viruses for the merged virsorter file
+rule virsorter_viral_1_2:
+    input:
+        vsin1="Classifications/vs_merged.txt"
+    params:
+        catlist="1,2"
+    output:
+        vsout1="Classifications/vs_merged_all_cat1and2_only.txt"
+    script:
+        "Scripts/get_viruses_virsorter.py"
+
+# Get the category 1, 2, and 3 viruses for the merged virsorter file
+rule virsorter_viral_1_2_3:
+    input:
+        vsin1="Classifications/vs_merged.txt"
+    params:
+        catlist="1,2,3"
+    output:
+        vsout1="Classifications/vs_merged_all_cat1_2_3.txt"
+    script:
+        "Scripts/get_viruses_virsorter.py"
+
+# Get the category 4 and 5 viruses for the merged virsorter file
+rule virsorter_prophage:
+    input:
+        vsin1="Classifications/vs_merged.txt"
+    params:
+        catlist="4,5"
+    output:
+        vsout1="Classifications/vs_merged_all_prophages_only.txt"
+    script:
+        "Scripts/get_viruses_virsorter.py"
