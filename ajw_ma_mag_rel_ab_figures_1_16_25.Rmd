@@ -1,0 +1,509 @@
+---
+title: "ajw_ma_mag_rel_ab_figures_11_8_23"
+author: "A.J Wing"
+date: "2023-11-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(jcolors)
+library(viridis)
+library(cowplot)
+library(gridExtra)
+library(vegan)
+
+```
+
+```{r}
+metadata <- read_tsv("~/Desktop/erie_story_r_work/2014_story_metadata_updated_12_15_21.tsv")
+names(metadata)[names(metadata) == 'samples'] <- "sample"
+metadata$sample <- gsub("Sample_","",metadata$sample)
+```
+
+##aug host abundances
+```{r}
+setwd("~/Desktop/erie_story_r_work/aug_ma_mags_coverm_results/")
+```
+
+```{r}
+files = list.files(pattern="*_ma_mags_relative_abundance.tsv",recursive=TRUE)
+
+blast_hits <- function(x) {
+  # Check if file is empty
+  if (file.info(x)$size == 0) {
+    message(paste0("Skipping empty file ", x))
+    return(NULL)
+  } else {
+    tmp <- read.delim(x, header = FALSE, sep = "\t")
+    tmp$sample <- gsub("", "", gsub("_ma_mags_relative_abundance.tsv", "", basename(x)))
+    tmp$sample <- gsub("", "", gsub("sample_", "", basename(x)))
+    return(tmp)
+  }
+}
+
+tables <- Filter(NROW, lapply(files, blast_hits))
+coverm_data <- rbindlist(tables)
+```
+
+
+##modify giant coverm file to contain meaningful columns
+```{r}
+
+names(coverm_data)[names(coverm_data) == 'V1'] <- "host_genome"
+names(coverm_data)[names(coverm_data) == 'V2'] <- "host_rel_ab"
+names(coverm_data)[names(coverm_data) == 'V3'] <- "host_mean_read_depth"
+names(coverm_data)[names(coverm_data) == 'V4'] <- "host_covered_bases"
+names(coverm_data)[names(coverm_data) == 'V5'] <- "host_variance"
+names(coverm_data)[names(coverm_data) == 'V6'] <- "host_genome_length"
+names(coverm_data)[names(coverm_data) == 'V7'] <- "host_rpkm"
+names(coverm_data)[names(coverm_data) == 'V8'] <- "host_tpm"
+names(coverm_data)[names(coverm_data) == 'V9'] <- "host_sample"
+
+```
+
+```{r}
+coverm_data <- coverm_data[coverm_data$host_genome != 'unmapped',]
+coverm_data <- coverm_data[coverm_data$host_genome != 'Genome',]
+coverm_data$host_genome <- gsub("concatenated_concatenated_","",coverm_data$host_genome)
+coverm_data$sample <- gsub("_ma_mags_relative_abundance.tsv","",coverm_data$sample)
+
+coverm_data <- subset(coverm_data, grepl("contigs", host_genome))
+```
+
+##merge metadata and coverm data
+```{r}
+coverm_aug_mags <- merge(coverm_data, metadata, by = "sample")
+
+coverm_aug_mags$host_genome <- gsub("_ma_contigs", "", coverm_aug_mags$host_genome)
+
+coverm_aug_mags$host_rel_ab <- as.numeric(coverm_aug_mags$host_rel_ab)
+
+```
+
+
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p1 <- ggplot(coverm_aug_mags, aes(x = host_genome, y = host_rel_ab, fill = Station)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ fraction, nrow = 1, scales = "free") +  # Facet by Station
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the defined palette for coloring Station
+  theme_minimal() +
+  ggtitle("August 4") +  # Add the plot title
+  ylim(0, 40) +  # Set y-axis limits to 0 and 40
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels by 45 degrees
+
+p1
+```
+
+```{r}
+# Define a palette of 10 colors
+my_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999", "#000000")
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p2 <- ggplot(coverm_aug_mags, aes(x = host_genome, y = host_rel_ab, fill = "4-Aug-14")) +
+  geom_bar(stat = "identity") +
+  facet_grid(Station ~ fraction, scales = "free") +  # Facet by both Station and fraction
+  labs(x = "Host Genome", y = "Relative Abundance") +
+  scale_fill_manual(values = "olivedrab") +  # Use the defined palette for coloring host_genome
+  theme_minimal() +
+  ggtitle("August 4") +  # Add the plot title
+  ylim(0, 40) +  # Set y-axis limits to 0 and 40
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p2
+```
+
+```{r}
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p2 <- ggplot(coverm_aug_mags, aes(x = factor(1), y = host_rel_ab)) +  # Set x to a constant to center the box plots
+  geom_boxplot(aes(fill = fraction), color = "black", width = 0.5) +  # Set the fill color by fraction and line color to black, adjust box width if needed
+  geom_jitter(aes(fill = fraction), width = 0.2, alpha = 0.5, shape = 21, color = "black") +  # Add jittered points with fill color by fraction and black outline
+  facet_wrap(~ interaction(Station, fraction), scales = "free", strip.position = "bottom") +  # Use facet_wrap and place labels at the bottom
+  labs(x = "Station and Fraction", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the defined palette for coloring fractions
+  theme_minimal() +
+  ggtitle("August 4") +  # Add the plot title
+  ylim(0, 30) +  # Set y-axis limits to 0 and 30
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.background = element_blank(),  # Remove background for facet labels
+        strip.placement = "outside",  # Place facet labels outside the plot area
+        panel.grid = element_blank())  # Remove the grid background
+
+p2
+
+```
+
+```{r}
+# Define the colors for each fraction
+fraction_colors <- c("100" = "#29BF12", "3" = "#00A5CF", "53" = "#DE1A1A", "Whole" = "#FFBF00")
+
+# Reorder the factors for Station and fraction
+coverm_aug_mags$Station <- factor(coverm_aug_mags$Station, levels = c("WLE12", "WLE2", "WLE4"))
+coverm_aug_mags$fraction <- factor(coverm_aug_mags$fraction, levels = c("Whole", "3", "53", "100"))
+
+p2 <- ggplot(coverm_aug_mags, aes(x = factor(1), y = host_rel_ab)) +  # Set x to a constant to center the box plots
+  geom_boxplot(aes(fill = fraction), color = "black", width = 0.5) +  # Set the fill color by fraction and line color to black, adjust box width if needed
+  geom_jitter(aes(fill = fraction), width = 0.2, alpha = 0.5, shape = 21, color = "black") +  # Add jittered points with fill color by fraction and black outline
+  facet_grid(Station ~ fraction, scales = "free") +  # Use facet_grid to arrange panels as specified
+  labs(x = "Station and Fraction", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the named palette for coloring fractions
+  theme_minimal() +
+  ggtitle("August 4") +  # Add the plot title
+  ylim(0, 30) +  # Set y-axis limits to 0 and 30
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.background = element_blank(),  # Remove background for facet labels
+        strip.placement = "outside",  # Place facet labels outside the plot area
+        panel.grid = element_blank())  # Remove the grid background
+
+p2
+
+```
+
+
+###now make shannon's evenness plots
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(vegan)
+
+# Create an abundance table for each combination of Station and fraction
+abund_table <- coverm_aug_mags %>%
+  group_by(Station, fraction, host_genome) %>%
+  summarise(total_abundance = sum(host_rel_ab), .groups = 'drop') %>%
+  pivot_wider(names_from = host_genome, values_from = total_abundance, values_fill = list(total_abundance = 0))
+
+# Function to calculate Shannon's Evenness for each row
+calculate_shannon_evenness <- function(row) {
+  abundance_values <- as.numeric(row[-c(1, 2)])  # Exclude the first two columns (Station and fraction)
+  H <- diversity(abundance_values, index = "shannon")  # Shannon diversity index
+  S <- sum(abundance_values > 0)  # Number of unique host genomes (non-zero abundance)
+  E <- H / log(S)  # Shannon's Evenness
+  return(E)
+}
+
+# Calculate Shannon's Evenness for each group
+shannon_evenness_data <- abund_table %>%
+  rowwise() %>%
+  mutate(evenness = calculate_shannon_evenness(cur_data())) %>%
+  select(Station, fraction, evenness) %>%
+  ungroup()
+
+```
+
+```{r}
+# Define the colors for each fraction
+fraction_colors <- c("100" = "#29BF12", "3" = "#00A5CF", "53" = "#DE1A1A", "Whole" = "#FFBF00")
+
+# Reorder the factors for Station and fraction
+shannon_evenness_data$Station <- factor(shannon_evenness_data$Station, levels = c("WLE12", "WLE2", "WLE4"))
+shannon_evenness_data$fraction <- factor(shannon_evenness_data$fraction, levels = c("Whole", "3", "53", "100"))
+
+p2_evenness <- ggplot(shannon_evenness_data, aes(x = interaction(Station, fraction), y = evenness, fill = fraction)) +  # Set x to interaction of Station and fraction
+  geom_boxplot(color = "black", width = 0.5) +  # Set the fill color by fraction and line color to black, adjust box width if needed
+  geom_jitter(aes(fill = fraction), width = 0.2, alpha = 0.5, shape = 21, color = "black") +  # Add jittered points with fill color by fraction and black outline
+  facet_grid(Station ~ fraction, scales = "free") +  # Use facet_grid to arrange panels as specified
+  labs(x = "Station and Fraction", y = "Shannon Evenness") +
+  scale_fill_manual(values = fraction_colors) +  # Use the named palette for coloring fractions
+  theme_minimal() +
+  ggtitle("Shannon Evenness - August 4") +  # Add the plot title
+  ylim(0, 1) +  # Set y-axis limits to 0 and 1 (since evenness ranges from 0 to 1)
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.background = element_blank(),  # Remove background for facet labels
+        strip.placement = "outside",  # Place facet labels outside the plot area
+        panel.grid = element_blank())  # Remove the grid background
+
+p2_evenness
+
+```
+
+##sep host abundances
+```{r}
+setwd("~/Desktop/erie_story_r_work/sep_ma_mags_coverm_results/")
+```
+
+```{r}
+files = list.files(pattern="*_ma_mags_relative_abundance.tsv",recursive=TRUE)
+
+blast_hits <- function(x) {
+  # Check if file is empty
+  if (file.info(x)$size == 0) {
+    message(paste0("Skipping empty file ", x))
+    return(NULL)
+  } else {
+    tmp <- read.delim(x, header = FALSE, sep = "\t")
+    tmp$sample <- gsub("", "", gsub("_ma_mags_relative_abundance.tsv", "", basename(x)))
+    tmp$sample <- gsub("", "", gsub("sample_", "", basename(x)))
+    return(tmp)
+  }
+}
+
+tables <- Filter(NROW, lapply(files, blast_hits))
+coverm_data <- rbindlist(tables)
+```
+
+
+##modify giant coverm file to contain meaningful columns
+```{r}
+
+names(coverm_data)[names(coverm_data) == 'V1'] <- "host_genome"
+names(coverm_data)[names(coverm_data) == 'V2'] <- "host_rel_ab"
+names(coverm_data)[names(coverm_data) == 'V3'] <- "host_mean_read_depth"
+names(coverm_data)[names(coverm_data) == 'V4'] <- "host_covered_bases"
+names(coverm_data)[names(coverm_data) == 'V5'] <- "host_variance"
+names(coverm_data)[names(coverm_data) == 'V6'] <- "host_genome_length"
+names(coverm_data)[names(coverm_data) == 'V7'] <- "host_rpkm"
+names(coverm_data)[names(coverm_data) == 'V8'] <- "host_tpm"
+names(coverm_data)[names(coverm_data) == 'V9'] <- "host_sample"
+
+```
+
+```{r}
+coverm_data <- coverm_data[coverm_data$host_genome != 'unmapped',]
+coverm_data <- coverm_data[coverm_data$host_genome != 'Genome',]
+coverm_data$host_genome <- gsub("concatenated_concatenated_","",coverm_data$host_genome)
+coverm_data$sample <- gsub("_ma_mags_relative_abundance.tsv","",coverm_data$sample)
+
+coverm_data <- subset(coverm_data, grepl("contigs", host_genome))
+```
+
+##merge metadata and coverm data
+```{r}
+coverm_sep_mags <- merge(coverm_data, metadata, by = "sample")
+
+coverm_sep_mags$host_genome <- gsub("_ma_contigs", "", coverm_sep_mags$host_genome)
+
+coverm_sep_mags$host_rel_ab <- as.numeric(coverm_sep_mags$host_rel_ab)
+
+```
+
+
+
+```{r}
+fraction_colors <- c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00")
+
+p2 <- ggplot(coverm_sep_mags, aes(x = factor(1), y = host_rel_ab)) +  # Set x to a constant to center the box plots
+  geom_boxplot(aes(fill = fraction), color = "black", width = 0.5) +  # Set the fill color by fraction and line color to black, adjust box width if needed
+  geom_jitter(aes(fill = fraction), width = 0.2, alpha = 0.5, shape = 21, color = "black") +  # Add jittered points with fill color by fraction and black outline
+  facet_wrap(~ interaction(Station, fraction), scales = "free", strip.position = "bottom") +  # Use facet_wrap and place labels at the bottom
+  labs(x = "Station and Fraction", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the defined palette for coloring fractions
+  theme_minimal() +
+  ggtitle("September 29") +  # Add the plot title
+  ylim(0, 30) +  # Set y-axis limits to 0 and 30
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.background = element_blank(),  # Remove background for facet labels
+        strip.placement = "outside",  # Place facet labels outside the plot area
+        panel.grid = element_blank())  # Remove the grid background
+
+p2
+
+```
+
+```{r}
+# Define the colors for each fraction
+fraction_colors <- c("100" = "#29BF12", "3" = "#00A5CF", "53" = "#DE1A1A", "Whole" = "#FFBF00")
+
+# Reorder the factors for Station and fraction
+coverm_sep_mags$Station <- factor(coverm_sep_mags$Station, levels = c("WLE12", "WLE2", "WLE4"))
+coverm_sep_mags$fraction <- factor(coverm_sep_mags$fraction, levels = c("Whole", "3", "53", "100"))
+
+p2 <- ggplot(coverm_sep_mags, aes(x = factor(1), y = host_rel_ab)) +  # Set x to a constant to center the box plots
+  geom_boxplot(aes(fill = fraction), color = "black", width = 0.5) +  # Set the fill color by fraction and line color to black, adjust box width if needed
+  geom_jitter(aes(fill = fraction), width = 0.2, alpha = 0.5, shape = 21, color = "black") +  # Add jittered points with fill color by fraction and black outline
+  facet_grid(Station ~ fraction, scales = "free") +  # Use facet_grid to arrange panels as specified
+  labs(x = "Station and Fraction", y = "Relative Abundance") +
+  scale_fill_manual(values = fraction_colors) +  # Use the named palette for coloring fractions
+  theme_minimal() +
+  ggtitle("September 29") +  # Add the plot title
+  ylim(0, 30) +  # Set y-axis limits to 0 and 30
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.background = element_blank(),  # Remove background for facet labels
+        strip.placement = "outside",  # Place facet labels outside the plot area
+        panel.grid = element_blank())  # Remove the grid background
+
+p2
+
+```
+
+
+###now make shannon's evenness plots
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(vegan)
+
+# Create an abundance table for each combination of Station and fraction
+abund_table <- coverm_sep_mags %>%
+  group_by(Station, fraction, host_genome) %>%
+  summarise(total_abundance = sum(host_rel_ab), .groups = 'drop') %>%
+  pivot_wider(names_from = host_genome, values_from = total_abundance, values_fill = list(total_abundance = 0))
+
+# Function to calculate Shannon's Evenness for each row
+calculate_shannon_evenness <- function(row) {
+  abundance_values <- as.numeric(row[-c(1, 2)])  # Exclude the first two columns (Station and fraction)
+  H <- diversity(abundance_values, index = "shannon")  # Shannon diversity index
+  S <- sum(abundance_values > 0)  # Number of unique host genomes (non-zero abundance)
+  E <- H / log(S)  # Shannon's Evenness
+  return(E)
+}
+
+# Calculate Shannon's Evenness for each group
+shannon_evenness_data_sep <- abund_table %>%
+  rowwise() %>%
+  mutate(evenness = calculate_shannon_evenness(cur_data())) %>%
+  select(Station, fraction, evenness) %>%
+  ungroup()
+
+```
+
+
+##now get shannons evenness for two dates combined
+
+```{r}
+# Combine two dataframes using rbind in base R
+combined_data <- rbind(coverm_aug_mags, coverm_sep_mags)
+
+```
+
+```{r}
+
+# Create an abundance table for each combination of Station and fraction
+abund_table <- combined_data %>%
+  group_by(Station, fraction, host_genome) %>%
+  summarise(total_abundance = sum(host_rel_ab), .groups = 'drop') %>%
+  pivot_wider(names_from = host_genome, values_from = total_abundance, values_fill = list(total_abundance = 0))
+
+# Function to calculate Shannon's Evenness for each row
+calculate_shannon_evenness <- function(row) {
+  abundance_values <- as.numeric(row[-c(1, 2)])  # Exclude the first two columns (Station and fraction)
+  H <- diversity(abundance_values, index = "shannon")  # Shannon diversity index
+  S <- sum(abundance_values > 0)  # Number of unique host genomes (non-zero abundance)
+  E <- H / log(S)  # Shannon's Evenness
+  return(E)
+}
+
+# Calculate Shannon's Evenness for each group
+shannon_evenness_data_all <- abund_table %>%
+  rowwise() %>%
+  mutate(evenness = calculate_shannon_evenness(cur_data())) %>%
+  select(Station, fraction, evenness) %>%
+  ungroup()
+
+```
+
+```{r}
+
+# Define the colors for each fraction
+fraction_colors <- c("100" = "#29BF12", "3" = "#00A5CF", "53" = "#DE1A1A", "Whole" = "#FFBF00")
+
+# Reorder the factors for Station and fraction
+shannon_evenness_data_all$Station <- factor(shannon_evenness_data_all$Station, levels = c("WLE12", "WLE2", "WLE4"))
+shannon_evenness_data_all$fraction <- factor(shannon_evenness_data_all$fraction, levels = c("Whole", "3", "53", "100"))
+
+# Create the plot
+p2_evenness <- ggplot(shannon_evenness_data_all, aes(x = interaction(Station, fraction), y = evenness, fill = fraction)) +  # Set x to interaction of Station and fraction
+  geom_boxplot(color = "black", width = 0.5) +  # Set the fill color by fraction and line color to black, adjust box width if needed
+  geom_jitter(aes(fill = fraction), width = 0.2, alpha = 0.5, shape = 21, color = "black") +  # Add jittered points with fill color by fraction and black outline
+  facet_grid(Station ~ fraction, scales = "free") +  # Use facet_grid to arrange panels as specified
+  labs(x = "Station and Fraction", y = "Shannon Evenness") +
+  scale_fill_manual(values = fraction_colors) +  # Use the named palette for coloring fractions
+  theme_minimal() +
+  ggtitle("Shannon Evenness by Station and Fraction") +  # Add the plot title
+  ylim(0, 1) +  # Set y-axis limits to 0 and 1 (since evenness ranges from 0 to 1)
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.background = element_blank(),  # Remove background for facet labels
+        strip.placement = "outside",  # Place facet labels outside the plot area
+        panel.grid = element_blank())  # Remove the grid background
+
+# Print the plot
+print(p2_evenness)
+
+```
+
+```{r}
+
+# Define the colors for each fraction
+fraction_colors <- c("100" = "#29BF12", "3" = "#00A5CF", "53" = "#DE1A1A", "Whole" = "#FFBF00")
+
+# Reorder the factor for fraction
+shannon_evenness_data_all$fraction <- factor(shannon_evenness_data_all$fraction, levels = c("Whole", "3", "53", "100"))
+
+# Create the plot
+p2_evenness <- ggplot(shannon_evenness_data_all, aes(x = fraction, y = evenness, fill = fraction)) +  # Set x to fraction and y to evenness
+  geom_boxplot(color = "black", width = 0.5) +  # Set the fill color by fraction and line color to black, adjust box width if needed
+  geom_jitter(aes(fill = fraction), width = 0.05, alpha = 0.5, shape = 21, color = "black") +  # Add jittered points with fill color by fraction and black outline
+  labs(x = "Sampling Fraction", y = "Shannon Evenness") +
+  scale_fill_manual(values = fraction_colors) +  # Use the named palette for coloring fractions
+  theme_minimal() +
+  ggtitle("Shannon Evenness of Ma MAG diversity by Sampling Fraction") +  # Add the plot title
+  ylim(0.7, 1) +  # Set y-axis limits to 0 and 1 (since evenness ranges from 0 to 1)
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.background = element_blank(),  # Remove background for facet labels
+        panel.grid = element_blank())  # Remove the grid background
+
+# Print the plot
+print(p2_evenness)
+
+```
+
+##Run tukey test on host diversity
+
+```{r}
+library(dplyr)
+
+model <- lm( shannon_evenness_data_all$evenness ~ shannon_evenness_data_all$fraction )
+ANOVA <- aov(model)
+ 
+# Tukey test to study each pair of treatment :
+TUKEY <- TukeyHSD(x=ANOVA, 'shannon_evenness_data_all$fraction', conf.level=0.95)
+
+print(TUKEY)
+```
+
+```{r}
+# Assuming shannon_evenness_data_all is your data frame
+
+# Kruskal-Wallis Test
+kruskal_test <- kruskal.test(evenness ~ fraction, data = shannon_evenness_data_all)
+print(kruskal_test)
+
+# Dunn's Test
+install.packages("FSA")
+library(FSA)
+dunn_test <- dunnTest(evenness ~ fraction, data = shannon_evenness_data_all, method="bonferroni")
+print(dunn_test)
+
+# Welch's ANOVA
+welch_anova <- oneway.test(evenness ~ fraction, data = shannon_evenness_data_all, var.equal = FALSE)
+print(welch_anova)
+
+# Pairwise t-tests
+pairwise_t_test <- pairwise.t.test(shannon_evenness_data_all$evenness, shannon_evenness_data_all$fraction, p.adjust.method = "bonferroni")
+print(pairwise_t_test)
+
+# Linear Mixed-Effects Model (example with a random effect)
+install.packages("lme4")
+library(lme4)
+# Assuming you have a column named 'random_effect' for the random effect
+mixed_model <- lmer(evenness ~ fraction + (1|random_effect), data = shannon_evenness_data_all)
+summary(mixed_model)
+
+```
+

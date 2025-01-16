@@ -1,0 +1,459 @@
+---
+title: "panaroo_microcystis_gene_cluster_analysis_9_23_24_ajw"
+output: html_document
+date: "2024-09-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(ggthemes)
+library(reshape2)
+library(pheatmap)
+library(readr)
+library(dendextend)
+library(gridExtra)
+library(vegan)
+library(ape)
+library(RColorBrewer)
+library(jcolors)
+library(showtext)
+library(lubridate)
+library(leaps)
+library(car)
+library(nnet)
+library(randomForest)
+library(boot)
+library(randomForestExplainer)
+library(VennDiagram)
+```
+
+```{r}
+# Read in a ma genes from panaroo with headers in panaroo format to investigate
+ma_gene_clusters_panaroo <- read.csv("~/Desktop/erie_story_r_work/gene_presence_absence.csv", header = TRUE)
+
+# Modify the column names: remove 'X' and '_ma_contigs'
+colnames(ma_gene_clusters_panaroo) <- gsub("^X", "", colnames(ma_gene_clusters_panaroo))  # Remove the leading 'X'
+colnames(ma_gene_clusters_panaroo) <- gsub("_ma_contigs$", "", colnames(ma_gene_clusters_panaroo))  # Remove '_ma_contigs' at the end
+
+# Read in a ma genes from panaroo with headers in roary format to investigate
+ma_gene_clusters_roary <- read.csv("~/Desktop/erie_story_r_work/gene_presence_absence_roary.csv", header = TRUE)
+
+# Modify the column names: remove 'X' and '_ma_contigs'
+colnames(ma_gene_clusters_roary) <- gsub("^X", "", colnames(ma_gene_clusters_roary))  # Remove the leading 'X'
+colnames(ma_gene_clusters_roary) <- gsub("_ma_contigs$", "", colnames(ma_gene_clusters_roary))  # Remove '_ma_contigs' at the end
+```
+
+```{r}
+# Read in the .rtab file as a tab-delimited file
+ma_genes_presence_absence <- read.delim("~/Desktop/erie_story_r_work/gene_presence_absence.Rtab", header = TRUE, sep = "\t")
+
+# Modify the column names: remove 'X' and '_ma_contigs'
+colnames(ma_genes_presence_absence) <- gsub("^X", "", colnames(ma_genes_presence_absence))  # Remove the leading 'X'
+colnames(ma_genes_presence_absence) <- gsub("_ma_contigs$", "", colnames(ma_genes_presence_absence))  # Remove '_ma_contigs' at the end
+
+```
+
+```{r}
+# Now group the samples into different size fractions for comparison 
+
+# Create a new dataframe with the 'Gene' column
+fraction_ma_genes_presence_absence <- ma_genes_presence_absence[, "Gene", drop = FALSE]
+
+# Sum the grouped columns and add them to the new dataframe
+fraction_ma_genes_presence_absence$`100` <- rowSums(ma_genes_presence_absence[, c("49615", "49622", "49625", "49629", "49633")])
+fraction_ma_genes_presence_absence$`3` <- rowSums(ma_genes_presence_absence[, c("49617", "49620", "49623", "49627", "49631")])
+fraction_ma_genes_presence_absence$`53` <- rowSums(ma_genes_presence_absence[, c("49619", "49626")])
+fraction_ma_genes_presence_absence$`whole` <- rowSums(ma_genes_presence_absence[, c("49614", "49618", "49621", "49624", "49628")])
+
+# View the first few rows of the new dataframe
+head(fraction_ma_genes_presence_absence)
+
+write.table(fraction_ma_genes_presence_absence, file = "~/Desktop/erie_story_r_work/fraction_ma_gene_cluster_presence_absence.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+```
+
+```{r}
+#Now pull the gene clusters that are unique for each fraction
+# For each column (fraction), find rows where the value is 1 in the fraction and 0 in all others
+unique_to_100 <- subset(fraction_ma_genes_presence_absence, `100` > 0 & `3` == 0 & `53` == 0 & `whole` == 0)
+unique_to_3 <- subset(fraction_ma_genes_presence_absence, `100` == 0 & `3` > 0 & `53` == 0 & `whole` == 0)
+unique_to_53 <- subset(fraction_ma_genes_presence_absence, `100` == 0 & `3` == 0 & `53` > 0 & `whole` == 0)
+unique_to_whole <- subset(fraction_ma_genes_presence_absence, `100` == 0 & `3` == 0 & `53` == 0 & `whole` > 0)
+
+# Display the results
+unique_to_100
+unique_to_3
+unique_to_53
+unique_to_whole
+
+```
+
+```{r}
+#Now pull the gene clusters that are unique for each fraction and annotated
+# For each column (fraction), find rows where the value is 1 in the fraction and 0 in all others
+unique_annotated_to_100 <- subset(annotated_fraction_ma_genes_presence_absence, `100` > 0 & `3` == 0 & `53` == 0 & `whole` == 0)
+unique_annotated_to_3 <- subset(annotated_fraction_ma_genes_presence_absence, `100` == 0 & `3` > 0 & `53` == 0 & `whole` == 0)
+unique_annotated_to_53 <- subset(annotated_fraction_ma_genes_presence_absence, `100` == 0 & `3` == 0 & `53` > 0 & `whole` == 0)
+unique_annotated_to_whole <- subset(annotated_fraction_ma_genes_presence_absence, `100` == 0 & `3` == 0 & `53` == 0 & `whole` > 0)
+
+```
+
+```{r}
+# Lets attempt to visualize these genes across fractions as a heatmap
+
+# Remove the "Gene" column for the heatmap (as it's not numeric)
+heatmap_data <- fraction_ma_genes_presence_absence[, -1]
+
+# Convert the data to a matrix
+heatmap_matrix <- as.matrix(heatmap_data)
+
+# Create a heatmap with clustering
+all_genes_across_fractions <- pheatmap(heatmap_matrix, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE, 
+         show_rownames = FALSE,  # Disable row names for large datasets
+         scale = "none",  
+         angle_col = 0)
+all_genes_across_fractions
+
+```
+
+```{r}
+#Lets look at only the gene clusters that did receive an annotation
+
+# Filter the dataframe to exclude rows where 'Gene' contains the string "group"
+annotated_fraction_ma_genes_presence_absence <- fraction_ma_genes_presence_absence[!grepl("group", fraction_ma_genes_presence_absence$Gene), ]
+
+# Set the 'Gene' column as row names and remove it from the dataframe
+row.names(annotated_fraction_ma_genes_presence_absence) <- annotated_fraction_ma_genes_presence_absence$Gene
+annotated_fraction_ma_genes_presence_absence_matrix <- annotated_fraction_ma_genes_presence_absence[, -1]  # Remove the 'Gene' column
+
+# Convert the remaining data to a matrix (necessary for pheatmap)
+heatmap_matrix <- as.matrix(annotated_fraction_ma_genes_presence_absence_matrix)
+
+# Create the heatmap
+annotated_fraction_ma_genes_across_fractions <- pheatmap(heatmap_matrix, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE, 
+         show_rownames = FALSE,  # Show row names (gene names)
+         angle_col = 0,         # Make column names horizontal
+         scale = "none",
+         fontsize_row = 6) # Keep the data as is (no scaling)
+
+annotated_fraction_ma_genes_across_fractions
+
+```
+
+
+```{r}
+
+# Lets look at the unique annotated ma genes by fraction
+
+# Create lists of genes for each fraction
+genes_100 <- rownames(annotated_fraction_ma_genes_presence_absence[annotated_fraction_ma_genes_presence_absence$`100` > 0, ])
+genes_3 <- rownames(annotated_fraction_ma_genes_presence_absence[annotated_fraction_ma_genes_presence_absence$`3` > 0, ])
+genes_53 <- rownames(annotated_fraction_ma_genes_presence_absence[annotated_fraction_ma_genes_presence_absence$`53` > 0, ])
+genes_whole <- rownames(annotated_fraction_ma_genes_presence_absence[annotated_fraction_ma_genes_presence_absence$whole > 0, ])
+
+# Create Venn diagram
+
+venn.plot <- venn.diagram(
+  x = list(Fraction_100 = genes_100, Fraction_3 = genes_3, Fraction_53 = genes_53, Fraction_Whole = genes_whole),
+  category.names = c("100", "3", "53", "Whole"),
+  filename = NULL,  # Display the plot in the RStudio Viewer instead of saving to a file
+  output = TRUE,
+  
+ # Set colors for each circle
+  fill = c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00"),  # Custom colors for each fraction
+  alpha = 0.5,  # Set transparency of the circles
+  lwd = 2,  # Line width of circle borders
+  col = "black"  # Color of circle borders
+)
+
+grid.draw(venn.plot)
+```
+
+```{r}
+
+# Lets look at the unique ma genes by fraction
+
+# Create lists of genes for each fraction
+genes_100 <- rownames(fraction_ma_genes_presence_absence[fraction_ma_genes_presence_absence$`100` > 0, ])
+genes_3 <- rownames(fraction_ma_genes_presence_absence[fraction_ma_genes_presence_absence$`3` > 0, ])
+genes_53 <- rownames(fraction_ma_genes_presence_absence[fraction_ma_genes_presence_absence$`53` > 0, ])
+genes_whole <- rownames(fraction_ma_genes_presence_absence[fraction_ma_genes_presence_absence$whole > 0, ])
+
+# Create Venn diagram
+
+all.genes.venn.plot <- venn.diagram(
+  x = list(Fraction_100 = genes_100, Fraction_3 = genes_3, Fraction_53 = genes_53, Fraction_Whole = genes_whole),
+  category.names = c("100", "3", "53", "Whole"),
+  filename = NULL,  # Display the plot in the RStudio Viewer instead of saving to a file
+  output = TRUE,
+  
+ # Set colors for each circle
+  fill = c("#29BF12", "#00A5CF", "#DE1A1A", "#FFBF00"),  # Custom colors for each fraction
+  alpha = 0.5,  # Set transparency of the circles
+  lwd = 2,  # Line width of circle borders
+  col = "black"  # Color of circle borders
+)
+
+grid.draw(all.genes.venn.plot)
+```
+
+
+```{r}
+#make heat maps simply looking at presence/absence as opposed to number of samples
+
+# Create a new dataframe by copying the original one
+binary_fraction_ma_genes_presence_absence <- fraction_ma_genes_presence_absence
+
+# Replace all non-zero values with 1, ignoring the "Gene" column
+binary_fraction_ma_genes_presence_absence[, -1] <- lapply(binary_fraction_ma_genes_presence_absence[, -1], function(x) ifelse(x != 0, 1, 0))
+
+
+
+```
+
+```{r}
+# Now make a heatmap of the binary matrix
+
+# Remove the "Gene" column for the heatmap (as it's not numeric)
+heatmap_data <- binary_fraction_ma_genes_presence_absence[, -1]
+
+# Convert the data to a matrix
+heatmap_matrix <- as.matrix(heatmap_data)
+
+# Create a heatmap with clustering
+binary_fraction_ma_genes_across_fractions <- pheatmap(heatmap_matrix, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE, 
+         show_rownames = FALSE,  # Disable row names for large datasets
+         scale = "none",  
+         angle_col = 0)
+binary_fraction_ma_genes_across_fractions
+
+```
+
+```{r}
+#make heat maps simply looking at presence/absence as opposed to number of samples
+
+# Create a new dataframe by copying the original annotated one
+binary_annotated_fraction_ma_genes_presence_absence <- annotated_fraction_ma_genes_presence_absence
+
+# Replace all non-zero values with 1, ignoring the "Gene" column
+binary_annotated_fraction_ma_genes_presence_absence[, -1] <- lapply(binary_annotated_fraction_ma_genes_presence_absence[, -1], function(x) ifelse(x != 0, 1, 0))
+
+
+
+```
+
+```{r}
+# Now make a heatmap of the binary matrix
+
+# Remove the "Gene" column for the heatmap (as it's not numeric)
+heatmap_data <- binary_annotated_fraction_ma_genes_presence_absence[, -1]
+
+# Convert the data to a matrix
+heatmap_matrix <- as.matrix(heatmap_data)
+
+# Create a heatmap with clustering
+binary_annotated_fraction_ma_genes_across_fractions <- pheatmap(heatmap_matrix, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE, 
+         show_rownames = FALSE,  # Disable row names for large datasets
+         scale = "none",  
+         angle_col = 0)
+binary_annotated_fraction_ma_genes_across_fractions
+
+```
+
+
+```{r}
+#Lets try and make a pca that looks at samples to see if they group by fraction
+# Exclude the 'Gene' column
+
+pca_data <- ma_genes_presence_absence[, -1]  # Remove the Gene column
+
+# Transpose the data so that samples are rows and genes are columns
+pca_data <- t(pca_data)
+
+# Convert to a dataframe
+pca_data <- as.data.frame(pca_data)
+
+# Remove columns (genes) with zero variance (i.e., constant columns)
+pca_data <- pca_data[, apply(pca_data, 2, var) != 0]
+
+# Perform PCA on the filtered data (samples are now rows, genes are columns)
+pca_result <- prcomp(pca_data, scale. = TRUE)
+
+# Create a dataframe with PCA results for plotting
+pca_df <- data.frame(
+  Sample = rownames(pca_result$x),  # Sample names
+  PC1 = pca_result$x[, 1],         # Principal Component 1
+  PC2 = pca_result$x[, 2]          # Principal Component 2
+)
+
+# Add fraction information manually (replace with your actual fraction groupings)
+pca_df$Fraction <- c("Whole", "100", "3", "Whole", "53", "3", "Whole", "100", "3", "Whole", "100", "53", "3", "Whole", "100", "3", "100")
+
+
+
+pca_ma_gene_presence_absence <- ggplot(pca_df, aes(x = PC1, y = PC2, color = Fraction, label = Sample)) +
+  geom_point(size = 4, alpha = 0.8) +
+  scale_color_manual(values = c("100" = "#29BF12", "3" = "#00A5CF", "53" = "#DE1A1A", "Whole" = "#FFBF00")) +
+  labs(title = "Microcystis Gene Cluster Presence/Absence by Fraction",
+       x = "Principal Component 1 (18.2%)",
+       y = "Principal Component 2 (13.1%)") +
+  theme_minimal()
+
+pca_ma_gene_presence_absence
+```
+
+```{r}
+# Perform PCA (this assumes you have already run prcomp())
+pca_result <- prcomp(pca_data, scale. = TRUE)
+
+# Get the proportion of variance explained by each PC
+variance_explained <- pca_result$sdev^2 / sum(pca_result$sdev^2)
+
+# Convert to percentage
+variance_explained_percent <- variance_explained * 100
+
+# Extract variance explained by PC1 and PC2
+pc1_pc2_variance <- variance_explained_percent[1:2]
+```
+
+```{r}
+#Lets try NMDS, which is more suited for presence/absence data
+# Exclude the 'Gene' column and transpose the data so that samples are rows
+nmds_data <- ma_genes_presence_absence[, -1]  # Remove the Gene column
+nmds_data <- t(nmds_data)
+
+# Convert to a dataframe
+nmds_data <- as.data.frame(nmds_data)
+
+# Perform NMDS using Bray-Curtis dissimilarity (appropriate for presence/absence data)
+set.seed(123)  # Set seed for reproducibility
+nmds_result <- metaMDS(nmds_data, distance = "bray", k = 2, trymax = 100)
+
+# Extract the NMDS scores (positions of the samples in 2D space)
+nmds_scores <- as.data.frame(scores(nmds_result, "sites"))  # Extract only the sample scores
+
+# Add the sample names and fraction information
+nmds_scores$Sample <- rownames(nmds_scores)
+nmds_scores$Fraction <- c("Whole", "100", "3", "Whole", "53", "3", "Whole", "100", "3", "Whole", "100", "53", "3", "Whole", "100", "3", "100")
+
+# Plot the NMDS
+nmds_ma_gene_presence_absence <- ggplot(nmds_scores, aes(x = NMDS1, y = NMDS2, color = Fraction, label = Sample)) +
+  geom_point(size = 4, alpha = 0.8) +
+  scale_color_manual(values = c("100" = "#29BF12", "3" = "#00A5CF", "53" = "#DE1A1A", "Whole" = "#FFBF00")) +
+  labs(title = "NMDS of Microcystis Gene Presence/Absence by Sample",
+       x = "NMDS1",
+       y = "NMDS2") +
+  theme_minimal()
+
+# Display the NMDS plot
+nmds_ma_gene_presence_absence
+
+```
+
+```{r}
+nmds_res <- vegan::metaMDS(nmds_data, distance="bray", try=100)
+
+# Extract the NMDS scores (positions of the samples in 2D space)
+nmds_points <- as.data.frame(nmds_res$points)  # Extract only the sample scores
+
+# Add the sample names and fraction information
+nmds_points$Sample <- rownames(nmds_points)
+nmds_points$Fraction <- c("Whole", "100", "3", "Whole", "53", "3", "Whole", "100", "3", "Whole", "100", "53", "3", "Whole", "100", "3", "100")
+nmds_points$Date <- c("Aug-4", "Aug-4", "Aug-4", "Aug-4", "Aug-4", "Aug-4", "Aug-4", "Aug-4", "Aug-4", "Sep-29", "Sep-29", "Sep-29", "Sep-29", "Sep-29", "Sep-29", "Sep-29", "Sep-29")
+# Plot the NMDS
+nmds_ma_gene_presence_absence <- ggplot(nmds_points, aes(x = MDS1, y = MDS2, color = Fraction, shape = Date, label = Sample)) +
+  geom_jitter(size = 8, alpha = 0.8, width = 0.1, height = 0.1) +
+  scale_color_manual(values = c("100" = "#29BF12", "3" = "#00A5CF", "53" = "#DE1A1A", "Whole" = "#FFBF00")) +
+  labs(title = "Microcystis Gene Presence/Absence by Sample",
+       x = "NMDS1",
+       y = "NMDS2") +
+  theme_minimal()
+
+# Display the NMDS plot
+nmds_ma_gene_presence_absence
+
+```
+
+
+#Now lets look at this if we didnt collapse our samples into fractions and kept them separate
+```{r}
+# Step 1: Transpose the dataframe so that samples become rows and genes become columns
+transposed_ma_genes_presence_absence <- t(ma_genes_presence_absence[, -1])  # Exclude the 'Gene' column during transposition
+
+# Convert the transposed matrix into a dataframe for easier manipulation
+transposed_df <- as.data.frame(transposed_ma_genes_presence_absence)
+
+# Set the column names as the gene clusters (from the original rows)
+colnames(transposed_df) <- ma_genes_presence_absence$Gene
+
+# Add a new column to store the sample names (from row names of the transposed dataframe)
+transposed_df$Sample <- rownames(transposed_df)
+
+# Step 2: Add the 'Date' and 'Fraction' columns
+
+# Assign 'Date' based on sample names
+transposed_df$Date <- ifelse(grepl("4961[4-9]|4962[0-3]", transposed_df$Sample), "Aug-4",
+                             ifelse(grepl("4962[4-9]|4963[0-3]", transposed_df$Sample), "Sep-29", NA))
+
+# Assign 'Fraction' based on sample names
+transposed_df$Fraction <- ifelse(transposed_df$Sample %in% c("49615", "49622", "49625", "49629", "49633"), "100",
+                                 ifelse(transposed_df$Sample %in% c("49617", "49620", "49623", "49627", "49631"), "3",
+                                 ifelse(transposed_df$Sample %in% c("49619", "49626"), "53",
+                                 ifelse(transposed_df$Sample %in% c("49614", "49618", "49621", "49624", "49628"), "whole", NA))))
+
+# Assign 'Species' based on sample names
+transposed_df$Species <- ifelse(transposed_df$Sample %in% c("49618", "49615", "49619", "49622"), "M-aeruginosa",
+                                 ifelse(transposed_df$Sample %in% c("49624", "49628", "49620", "49627", "49631", "49614", "49621", "49623"), "M-aeruginosa-C",
+                                 ifelse(transposed_df$Sample %in% c("49633"), "M-panniformis-A",
+                                 ifelse(transposed_df$Sample %in% c("49625", "49629"), "M-wesenbergii",
+                                 ifelse(transposed_df$Sample %in% c("49617", "49626"), "M-sp000297435", NA)))))
+
+# Step 3: Prepare the data for heatmap
+
+# Remove the 'Sample', 'Date', and 'Fraction' columns for heatmap plotting (keep only numeric gene data)
+heatmap_data <- transposed_df[, !(colnames(transposed_df) %in% c("Sample", "Date", "Fraction", "Species"))]
+
+# Convert to matrix
+heatmap_matrix <- as.matrix(heatmap_data)
+
+# Create an annotation dataframe with the 'Date' and 'Fraction' columns
+annotation_data <- transposed_df[, c("Date", "Fraction", "Species")]
+
+# Set the row names of the annotation data to match the transposed dataframe row names (samples)
+rownames(annotation_data) <- transposed_df$Sample
+
+# Define colors for annotations
+annotation_colors <- list(
+  Date = c("Aug-4" = "orange", "Sep-29" = "pink"),
+  Fraction = c("100" = "#29BF12", "3" = "#00A5CF", "53" = "#DE1A1A", "whole" = "#FFBF00"),
+  Species = c("M-aeruginosa" = "#CCFFCC", "M-aeruginosa-C" = "#ADEBD2", "M-panniformis-A" = "#7FD959", "M-sp000297435" = "#006600", "M-wesenbergii" = "#302626"))
+# Generate the heatmap with row annotations (Date and Fraction)
+pheatmap(heatmap_matrix, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE, 
+         show_rownames = TRUE,  # Display row names (samples)
+         show_colnames = FALSE,  # Optionally hide gene cluster names for large datasets
+         scale = "none",  # No scaling applied to data
+         annotation_row = annotation_data, # Add Date and Fraction as row annotations
+         annotation_colors = annotation_colors,
+         main = "Heatmap of Microcystis Gene Clusters by Fraction and Date"
+)
+
+```
+
